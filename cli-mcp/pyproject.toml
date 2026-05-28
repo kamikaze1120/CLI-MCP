@@ -1,0 +1,61 @@
+[project]
+name = "cli-mcp"
+version = "1.0.0"
+description = "Universal sandboxed CLI gateway for MCP — run any CLI tool through AI assistants"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [
+    { name = "cli-mcp", email = "hello@cli-mcp.dev" },
+]
+keywords = ["mcp", "cli", "docker", "sandbox", "ai", "claude", "model-context-protocol"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: Scientific Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "mcp[cli]>=1.6.0",
+    "pyyaml>=6.0",
+    "pydantic>=2.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/cli-mcp"
+Repository = "https://github.com/yourusername/cli-mcp"
+Documentation = "https://github.com/yourusername/cli-mcp#readme"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5.0",
+]
+
+[project.scripts]
+cli-mcp = "cli_mcp.main:main"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N"]

@@ -1,0 +1,58 @@
+# ── Sandbox Configuration ──────────────────────────────────────────────────────
+sandbox:
+  type: docker
+  image: cli-mcp-tools:latest
+  container_name: cli-mcp-sandbox
+  persistent: true
+  auto_start: true
+  auto_stop: false
+  volume_mounts:
+    - host_path: /var/run/docker.sock
+      container_path: /var/run/docker.sock
+      read_only: true
+  workspace:
+    mount: true
+    host_path: ""
+    container_path: /workspace
+    read_only: false
+
+# ── Security Settings ─────────────────────────────────────────────────────────
+security:
+  mode: blocklist
+  blocklist:
+    - pattern: "rm\\s+-rf\\s+[\\/\\\\]$"
+      reason: "Prevents recursive root deletion"
+    - pattern: "dd\\s+if="
+      reason: "Prevents raw disk writes"
+    - pattern: "mkfs\\..*"
+      reason: "Prevents filesystem formatting"
+    - pattern: ">\\s*/dev/"
+      reason: "Prevents direct device access"
+    - pattern: "chmod\\s+777\\s+/"
+      reason: "Prevents world-writable root"
+  max_timeout: 300
+  max_output_lines: 2000
+  max_output_bytes: 1048576
+
+# ── Tool Settings ─────────────────────────────────────────────────────────────
+tools:
+  default_image: cli-mcp-tools:latest
+  command_timeout: 60
+  env:
+    PYTHONUNBUFFERED: "1"
+    NODE_ENV: "development"
+    CI: "true"
+  tool_aliases:
+    dc: docker compose
+    g: git
+    p: python3
+    p3: python3
+
+# ── Server Settings ───────────────────────────────────────────────────────────
+server:
+  transports:
+    - stdio
+  http:
+    host: 127.0.0.1
+    port: 8080
+    auth_token_env: CLI_MCP_AUTH_TOKEN
