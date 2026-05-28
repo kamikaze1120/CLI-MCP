@@ -1,27 +1,73 @@
-# 🛡️ CLI MCP Gateway
+# CLI MCP Gateway
 
-**Run any CLI command through AI assistants — safely sandboxed in Docker.**
+**The universal CLI gateway for AI assistants. 5 tools. 50+ CLIs. 1 Docker container.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](pyproject.toml)
 [![Docker](https://img.shields.io/badge/docker-required-2496ED?logo=docker)](https://docker.com)
 
-CLI MCP Gateway is a [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that gives AI assistants like Claude Desktop, Claude Code, and Cursor the ability to execute any CLI tool inside an isolated Docker container.
+CLI MCP Gateway is a [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that gives AI assistants like Claude Desktop, Claude Code, and Cursor the ability to execute **any CLI command** inside an isolated Docker container.
 
-**No more context copying. No more switching terminals. Just ask.**
+**Stop context-copying. Stop switching terminals. Just ask.**
+
+```text
+You:    "What's the git history look like?"
+Claude: *runs `git log --oneline -10`* → "Here are the last 10 commits..."
+
+You:    "Deploy the latest build"
+Claude: *runs `npm run build && aws s3 sync dist/ s3://myapp`* → "Deployed."
+
+You:    "Check disk usage in the container"
+Claude: *runs `docker exec app df -h`* → "You have 12GB free."
+```
 
 ---
 
-## ✨ Features
+## Why CLI MCP Gateway?
 
-- **🧰 Universal CLI access** — git, npm, python, aws, gcloud, gh, docker, curl, jq, ripgrep, and 50+ tools pre-installed
-- **🔒 Sandboxed by default** — every command runs inside a disposable Docker container with configurable security policies
-- **⚡ Persistent container** — near-instant execution with state preserved across commands
-- **🛡️ Built-in security** — configurable blocklist/allowlist, timeout enforcement, output truncation
-- **🖥️ Cross-platform** — works on macOS, Linux, and Windows (Docker Desktop + WSL2)
-- **🌐 Dual transport** — stdio for local development, HTTP for remote/team deployment
-- **🔧 Fully configurable** — YAML config file with environment variable overrides
-- **📦 Pre-built Docker image** — all tools included, ready to pull or build
+### For Developers
+
+**Your AI assistant can finally run *any* CLI command — safely.**
+
+- Stop copying terminal output into chat. Ask "show me the last 5 commits" and Claude runs `git log` itself.
+- Git, npm, docker, python, aws, gcloud, gh — 50+ tools pre-installed in a single image.
+- Setup in 2 minutes: `pip install && cli-mcp --build-image && cli-mcp`
+
+### For Teams
+
+**One MCP server to replace 20+ separate ones.**
+
+- Replace a zoo of per-tool MCP servers with a single universal gateway.
+- Standardized security policy across the whole team (YAML config, checked into repo).
+- Same tool environment for everyone — no more "works on my machine."
+- Docker sandbox means zero host contamination. Commands cannot touch your system.
+
+### For Security-Conscious Leaders
+
+**AI superpowers without the blast radius.**
+
+- Every command runs inside an **isolated Docker container** — no host filesystem access by default.
+- **Blocklist mode** — prevent `rm -rf /`, fork bombs, raw disk writes, and more.
+- **Allowlist mode** — restrict the AI to approved tools only (e.g., just `git` and `npm`).
+- **Timeout enforcement** — runaway commands auto-kill after N seconds.
+- **Output limits** — prevents context flooding.
+- **Read-only workspace** option for zero-write confidence.
+- **Fully auditable** — every command is in the chat history.
+
+---
+
+## Features
+
+| Capability | Detail |
+|---|---|
+| **Universal CLI** | `git`, `npm`, `python3`, `aws`, `gcloud`, `gh`, `docker`, `curl`, `jq`, `rg`, `go`, `rustc`, `java`, `make`, `vim`, `tmux` — 50+ tools pre-installed |
+| **Sandboxed by default** | Every command runs in an isolated Docker container. Configurable blocklist + allowlist. |
+| **Persistent container** | Near-instant execution (<200ms). State (auth tokens, caches, installed packages) persists across commands. |
+| **Security built in** | Blocklist/allowlist, timeout enforcement, output truncation, read-only workspace option. |
+| **Cross-platform** | Windows (Docker Desktop + WSL2), macOS, Linux — identical experience everywhere. |
+| **Dual transport** | `stdio` for local development ($0), HTTP for remote/team deployment ($5-10/mo VPS). |
+| **Configurable** | YAML config file with environment variable overrides. Check into repo for team consistency. |
+| **Pre-built image** | [Dockerfile](Dockerfile) included. Build once or pull from registry. All tools in one layer-cached image (~1.5GB). |
 
 ---
 
@@ -43,63 +89,38 @@ CLI MCP Gateway is a [Model Context Protocol (MCP)](https://modelcontextprotocol
 └──────────────────────┬──────────────────────────────────┘
                        │ docker exec
 ┌──────────────────────▼──────────────────────────────────┐
-│  Persistent Docker Container (cli-mcp-sandbox)          │
-│  ┌────────────────────────────────────────────────────┐ │
-│  │  cli-mcp-tools:latest                              │ │
-│  │  • git, node/npm, python3, go, rust, java          │ │
-│  │  • aws-cli, gcloud, gh, docker-cli                 │ │
-│  │  • curl, jq, ripgrep, fd, yq, tmux, vim...         │ │
-│  │  • workspace: /workspace ↔ host CWD                │ │
-│  │  • Docker socket mounted for docker-in-docker      │ │
-│  └────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────┘
+│  Persistent Docker Container (cli-mcp-sandbox)           │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │  cli-mcp-tools:latest                              │  │
+│  │  • git, node/npm, python3, go, rust, java          │  │
+│  │  • aws-cli, gcloud, gh, docker-cli                 │  │
+│  │  • curl, jq, ripgrep, fd, yq, tmux, vim...         │  │
+│  │  • workspace: /workspace ↔ host CWD                │  │
+│  │  • Docker socket mounted for docker-in-docker      │  │
+│  └────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🚀 Quick Start
-
-### Prerequisites
-
-- **Python 3.10+** — [Install Python](https://www.python.org/downloads/)
-- **Docker** — [Docker Desktop](https://www.docker.com/products/docker-desktop/) (macOS/Windows) or `docker` CLI (Linux)
-- **pip** (comes with Python) or **uv** (`pip install uv`)
-
-### 1. Install
+## Quick Start (2 minutes)
 
 ```bash
-# Clone the repo
+# 1. Install
 git clone https://github.com/yourusername/cli-mcp.git
 cd cli-mcp
-
-# Install with pip
 pip install .
 
-# Or install in editable mode for development
-pip install -e .
-```
-
-### 2. Build the Docker image
-
-```bash
-# Build the tools image (5-15 minutes)
+# 2. Build the tools image (5-15 min first time)
 cli-mcp --build-image
 
-# Verify
-docker images cli-mcp-tools
-```
-
-### 3. Start the server
-
-```bash
-# Default mode: stdio (for Claude Desktop / Claude Code)
+# 3. Start the server
 cli-mcp
-
-# Or with verbose logging
-cli-mcp -v
 ```
 
-### 4. Connect your AI assistant
+**Prerequisites**: Python 3.10+, Docker (Desktop or CLI), pip.
+
+### Connect your AI assistant
 
 <details>
 <summary><b>Claude Desktop</b></summary>
