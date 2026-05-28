@@ -30,29 +30,29 @@ CLI MCP Gateway is a [Model Context Protocol (MCP)](https://modelcontextprotocol
 ```
 ┌─────────────────────────────────────────────────────────┐
 │  MCP Host (Claude Desktop / Claude Code / Cursor)       │
-│    (stdio for local, HTTP for remote)                    │
+│    (stdio for local, HTTP for remote)                   │
 └──────────────────────┬──────────────────────────────────┘
                        │ JSON-RPC 2.0
 ┌──────────────────────▼──────────────────────────────────┐
-│              CLI MCP Gateway (Python FastMCP)             │
-│                                                           │
-│  Tools:  run_cli()  list_tools()  sandbox_info()          │
-│          reset_sandbox()  run_script()                     │
-│                                                           │
-│  Config: cli-mcp.yaml  |  ENV vars                        │
+│              CLI MCP Gateway (Python FastMCP)           │
+│                                                         │
+│  Tools:  run_cli()  list_tools()  sandbox_info()        │
+│          reset_sandbox()  run_script()                  │
+│                                                         │
+│  Config: cli-mcp.yaml  |  ENV vars                      │
 └──────────────────────┬──────────────────────────────────┘
                        │ docker exec
 ┌──────────────────────▼──────────────────────────────────┐
-│  Persistent Docker Container (cli-mcp-sandbox)            │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │  cli-mcp-tools:latest                               │  │
-│  │  • git, node/npm, python3, go, rust, java          │  │
-│  │  • aws-cli, gcloud, gh, docker-cli                 │  │
-│  │  • curl, jq, ripgrep, fd, yq, tmux, vim...        │  │
-│  │  • workspace: /workspace ↔ host CWD               │  │
-│  │  • Docker socket mounted for docker-in-docker      │  │
-│  └────────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────┘
+│  Persistent Docker Container (cli-mcp-sandbox)          │
+│  ┌────────────────────────────────────────────────────┐ │
+│  │  cli-mcp-tools:latest                              │ │
+│  │  • git, node/npm, python3, go, rust, java          │ │
+│  │  • aws-cli, gcloud, gh, docker-cli                 │ │
+│  │  • curl, jq, ripgrep, fd, yq, tmux, vim...         │ │
+│  │  • workspace: /workspace ↔ host CWD                │ │
+│  │  • Docker socket mounted for docker-in-docker      │ │
+│  └────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ---
