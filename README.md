@@ -67,7 +67,7 @@ Claude: *runs `docker exec app df -h`* → "You have 12GB free."
 | **Cross-platform** | Windows (Docker Desktop + WSL2), macOS, Linux — identical experience everywhere. |
 | **Dual transport** | `stdio` for local development ($0), HTTP for remote/team deployment ($5-10/mo VPS). |
 | **Configurable** | YAML config file with environment variable overrides. Check into repo for team consistency. |
-| **Pre-built image** | [Dockerfile](Dockerfile) included. Build once or pull from registry. All tools in one layer-cached image (~1.5GB). |
+| **Pre-built image** | [Dockerfile](Dockerfile) included. Build once with `cli-mcp --build-image`, or point `sandbox.image` at any image of your own. All tools in one layer-cached image (~1.5GB). |
 
 ---
 
@@ -107,8 +107,8 @@ Claude: *runs `docker exec app df -h`* → "You have 12GB free."
 
 ```bash
 # 1. Install
-git clone https://github.com/yourusername/cli-mcp.git
-cd cli-mcp
+git clone https://github.com/kamikaze1120/CLI-MCP.git
+cd CLI-MCP
 pip install .
 
 # 2. Build the tools image (5-15 min first time)
@@ -190,10 +190,12 @@ See [cli-mcp.example.yaml](cli-mcp.example.yaml) for the complete configuration 
 |---|---|---|
 | `CLI_MCP_IMAGE` | `sandbox.image` | `CLI_MCP_IMAGE=ghcr.io/myorg/cli-mcp-tools:v2` |
 | `CLI_MCP_CONTAINER_NAME` | `sandbox.container_name` | `CLI_MCP_CONTAINER_NAME=my-sandbox` |
-| `CLI_MCP_AUTH_TOKEN` | `server.http.auth_token_env` | `CLI_MCP_AUTH_TOKEN=sk-abc123...` |
 | `CLI_MCP_TIMEOUT` | `tools.command_timeout` | `CLI_MCP_TIMEOUT=120` |
 | `CLI_MCP_MAX_TIMEOUT` | `security.max_timeout` | `CLI_MCP_MAX_TIMEOUT=600` |
 | `CLI_MCP_WORKSPACE` | `sandbox.workspace.host_path` | `CLI_MCP_WORKSPACE=/home/user/projects` |
+
+`CLI_MCP_AUTH_TOKEN` is not a config override — it holds the bearer token itself, read at
+startup when running with the HTTP transport (see [Remote Deployment](#-remote-deployment)).
 
 ---
 
@@ -261,12 +263,16 @@ The following patterns are blocked by default:
 
 | Pattern | Reason |
 |---|---|
-| `rm -rf /` | Prevents recursive root deletion |
+| `rm -rf /` (any flag order, incl. `--no-preserve-root`) | Prevents recursive root deletion |
 | `dd if=` | Prevents raw disk writes |
 | `mkfs.*` | Prevents filesystem formatting |
 | `> /dev/` | Prevents direct device access |
 | `chmod 777 /` | Prevents world-writable root |
-| Fork bombs | Prevents denial-of-service |
+| Fork bombs (anywhere in the command) | Prevents denial-of-service |
+
+The blocklist applies in **both** modes. In allowlist mode, shell chaining characters
+(`;`, `&`, `|`, backticks, `$(...)`) are additionally rejected, so an allowed tool can't
+be used to smuggle in a disallowed one.
 
 ### Customizing security
 
@@ -305,24 +311,33 @@ CLI MCP Gateway can run as an HTTP server for team access or integration with re
 ### Start with HTTP
 
 ```bash
-# Start with HTTP transport
-cli-mcp --transport http --host 0.0.0.0 --port 8080
-
-# Set auth token (recommended)
+# Set auth token first (recommended), then start with HTTP transport
 export CLI_MCP_AUTH_TOKEN=$(openssl rand -hex 32)
-cli-mcp --transport http
+cli-mcp --transport http --host 0.0.0.0 --port 8080
 ```
+
+The MCP endpoint is served at `http://<host>:<port>/mcp` (streamable HTTP transport).
+When `CLI_MCP_AUTH_TOKEN` is set, every request must include:
+
+```
+Authorization: Bearer <token>
+```
+
+Requests without the token are rejected with `401 Unauthorized`. If the variable is
+unset, the server logs a loud warning and runs unauthenticated — only do that on
+localhost.
 
 ### Docker deployment
 
 ```bash
-# Run the MCP server itself in Docker
+# Run the MCP server itself in Docker (installs the gateway into the tools image)
 docker run -d \
   --name cli-mcp-server \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
   -p 8080:8080 \
+  -e CLI_MCP_AUTH_TOKEN=<your-token> \
   cli-mcp-tools:latest \
-  cli-mcp --transport http --host 0.0.0.0
+  bash -c "pip install git+https://github.com/kamikaze1120/CLI-MCP.git && cli-mcp --transport http --host 0.0.0.0"
 ```
 
 ### Production considerations
@@ -374,17 +389,17 @@ Yes. Docker Desktop on Windows with WSL2 backend is fully supported. The path tr
 
 ### How do I update the tools?
 
-Rebuild the image: `cli-mcp --build-image` and reset the sandbox: `reset_sandbox()`. Or pull an updated version: `docker pull ghcr.io/yourusername/cli-mcp-tools:latest` → `reset_sandbox()`.
+Rebuild the image from the repo checkout: `cli-mcp --build-image`, then reset the sandbox with the `reset_sandbox()` tool so a fresh container is created from the new image.
 
 ---
 
 ## 📦 Project Structure
 
 ```
-cli-mcp/
-├── src/
+CLI-MCP/
+├── src/cli_mcp/
 │   ├── main.py          # CLI entrypoint with argparse
-│   ├── server.py        # FastMCP server & tool definitions
+│   ├── server.py        # FastMCP server, tool definitions & HTTP auth
 │   ├── sandbox.py       # Docker container lifecycle manager
 │   ├── security.py      # Blocklist/allowlist & output limits
 │   ├── config.py        # YAML config loader with env overrides

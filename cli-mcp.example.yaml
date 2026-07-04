@@ -12,15 +12,21 @@ sandbox:
       read_only: true
   workspace:
     mount: true
-    host_path: ""
+    host_path: ""          # empty = current working directory of the server
     container_path: /workspace
     read_only: false
 
 # ── Security Settings ─────────────────────────────────────────────────────────
 security:
+  # "blocklist": everything is allowed except patterns below.
+  # "allowlist": only tools in allowed_tools may run, shell chaining
+  #              (;, &, |, `, $() ...) is rejected, and the blocklist
+  #              below still applies.
   mode: blocklist
   blocklist:
-    - pattern: "rm\\s+-rf\\s+[\\/\\\\]$"
+    - pattern: "rm\\s+(?:-\\w+\\s+)*-\\w*[rR]\\w*(?:\\s+-\\w+)*\\s+[\\/\\\\](?:[\\/\\\\*]|\\s|$)"
+      reason: "Prevents recursive root deletion"
+    - pattern: "--no-preserve-root"
       reason: "Prevents recursive root deletion"
     - pattern: "dd\\s+if="
       reason: "Prevents raw disk writes"
@@ -28,8 +34,14 @@ security:
       reason: "Prevents filesystem formatting"
     - pattern: ">\\s*/dev/"
       reason: "Prevents direct device access"
-    - pattern: "chmod\\s+777\\s+/"
+    - pattern: "chmod\\s+(?:-\\w+\\s+)*777\\s+/(?:\\s|$)"
       reason: "Prevents world-writable root"
+    - pattern: ":\\s*\\(\\s*\\)\\s*\\{.*\\|.*&"
+      reason: "Prevents fork bombs"
+  # allowed_tools:        # used only in allowlist mode
+  #   - git
+  #   - npm
+  #   - python3
   max_timeout: 300
   max_output_lines: 2000
   max_output_bytes: 1048576
@@ -55,4 +67,7 @@ server:
   http:
     host: 127.0.0.1
     port: 8080
+    # Name of the environment variable that holds the bearer token for HTTP
+    # mode. If that variable is set, every HTTP request must send
+    # "Authorization: Bearer <token>". Never put the token itself in this file.
     auth_token_env: CLI_MCP_AUTH_TOKEN

@@ -3,17 +3,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import platform
-import shlex
 import shutil
 import subprocess
-import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .path_utils import docker_mount_flag, is_windows, normalize_path, resolve_workspace
+from .path_utils import docker_mount_args, is_windows
 
 logger = logging.getLogger("cli-mcp.sandbox")
 
@@ -30,6 +27,21 @@ class ExecResult:
     duration: float
 
 
+async def _communicate_with_timeout(
+    proc: asyncio.subprocess.Process, timeout: int
+) -> tuple[bytes, bytes]:
+    """Wait for a process to finish, killing it if the timeout elapses."""
+    try:
+        return await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except asyncio.TimeoutError:
+        proc.kill()
+        try:
+            await asyncio.wait_for(proc.communicate(), timeout=5)
+        except asyncio.TimeoutError:
+            pass
+        raise
+
+
 class DockerSandbox:
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -44,60 +56,45 @@ class DockerSandbox:
         self._container_id: str | None = None
 
     def _docker_cmd(self) -> str:
-        docker = shutil.which("docker") or "docker"
-        return docker
+        return shutil.which("docker") or "docker"
 
     async def _run_docker(
-        self, args: list[str], timeout: int = 30, capture: bool = True
+        self, args: list[str], timeout: int = 30
     ) -> subprocess.CompletedProcess:
         cmd = [self._docker_cmd()] + args
         logger.debug(f"Running docker: {' '.join(cmd)}")
 
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
         try:
-            if capture:
-                proc = await asyncio.wait_for(
-                    asyncio.create_subprocess_exec(
-                        *cmd,
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                    ),
-                    timeout=timeout,
-                )
-                stdout, stderr = await proc.communicate()
-                return subprocess.CompletedProcess(
-                    args=cmd,
-                    returncode=proc.returncode or 0,
-                    stdout=stdout.decode("utf-8", errors="replace"),
-                    stderr=stderr.decode("utf-8", errors="replace"),
-                )
-            else:
-                proc = await asyncio.wait_for(
-                    asyncio.create_subprocess_exec(*cmd),
-                    timeout=timeout,
-                )
-                await proc.wait()
-                return subprocess.CompletedProcess(
-                    args=cmd, returncode=proc.returncode or 0
-                )
+            stdout, stderr = await _communicate_with_timeout(proc, timeout)
         except asyncio.TimeoutError:
             raise SandboxError(f"Docker command timed out after {timeout}s: {' '.join(cmd)}")
 
+        return subprocess.CompletedProcess(
+            args=cmd,
+            returncode=proc.returncode or 0,
+            stdout=stdout.decode("utf-8", errors="replace"),
+            stderr=stderr.decode("utf-8", errors="replace"),
+        )
+
     def _build_volume_flags(self) -> list[str]:
-        flags = []
+        flags: list[str] = []
         for mount in self.volume_mounts:
             host = mount.get("host_path", "")
             container = mount.get("container_path", "")
             ro = mount.get("read_only", False)
             if host and container:
-                flag = docker_mount_flag(host, container, ro)
-                flags.extend(shlex.split(flag))
+                flags.extend(docker_mount_args(host, container, ro))
 
         if self.workspace_cfg.get("mount", True):
             host_ws = self.workspace_cfg.get("host_path", "") or str(Path.cwd())
             container_ws = self.workspace_cfg.get("container_path", "/workspace")
             ro = self.workspace_cfg.get("read_only", False)
-            flag = docker_mount_flag(host_ws, container_ws, ro)
-            flags.extend(shlex.split(flag))
+            flags.extend(docker_mount_args(host_ws, container_ws, ro))
 
         return flags
 
@@ -109,7 +106,7 @@ class DockerSandbox:
         if result.returncode != 0:
             logger.info(f"Image '{self.image}' not found. Attempting to pull...")
             result = await self._run_docker(
-                ["pull", self.image], timeout=300
+                ["pull", self.image], timeout=600
             )
             if result.returncode != 0:
                 raise SandboxError(
@@ -154,8 +151,7 @@ class DockerSandbox:
             "--name", self.container_name,
         ]
 
-        volume_flags = self._build_volume_flags()
-        run_args.extend(volume_flags)
+        run_args.extend(self._build_volume_flags())
 
         tools_cfg = self.config.get("tools", {})
         env_vars = tools_cfg.get("env", {})
@@ -224,7 +220,7 @@ class DockerSandbox:
         if is_windows():
             workdir = workdir.replace("\\", "/")
 
-        exec_cmd = ["docker", "exec", "-i"]
+        exec_cmd = [self._docker_cmd(), "exec", "-i"]
         exec_cmd.extend(["-w", workdir])
         exec_cmd.append(self.container_name)
 
@@ -238,32 +234,27 @@ class DockerSandbox:
 
         start = time.monotonic()
 
+        proc = await asyncio.create_subprocess_exec(
+            *exec_cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
         try:
-            proc = await asyncio.wait_for(
-                asyncio.create_subprocess_exec(
-                    *exec_cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                ),
-                timeout=timeout,
-            )
-            stdout, stderr = await proc.communicate()
-            duration = time.monotonic() - start
-
-            return ExecResult(
-                stdout=stdout.decode("utf-8", errors="replace"),
-                stderr=stderr.decode("utf-8", errors="replace"),
-                exit_code=proc.returncode or 0,
-                duration=duration,
-            )
+            stdout, stderr = await _communicate_with_timeout(proc, timeout)
         except asyncio.TimeoutError:
-            duration = time.monotonic() - start
             return ExecResult(
                 stdout="",
                 stderr=f"Command timed out after {timeout}s",
                 exit_code=-1,
-                duration=duration,
+                duration=time.monotonic() - start,
             )
+
+        return ExecResult(
+            stdout=stdout.decode("utf-8", errors="replace"),
+            stderr=stderr.decode("utf-8", errors="replace"),
+            exit_code=proc.returncode or 0,
+            duration=time.monotonic() - start,
+        )
 
     async def list_tools(self) -> str:
         if not self._container_id:
@@ -272,7 +263,12 @@ class DockerSandbox:
             else:
                 return "Sandbox not started."
 
-        result = await self.exec("which", "-- ls git node python3 aws gcloud gh docker jq rg curl wget make gcc ssh tar zip unzip vim tmux", timeout=10)
+        result = await self.exec(
+            "which",
+            "-- ls git node npm python3 aws gcloud gh docker jq yq rg fdfind curl wget "
+            "make gcc go rustc java ssh tar zip unzip vim tmux",
+            timeout=10,
+        )
 
         found = []
         for line in result.stdout.splitlines():
@@ -289,8 +285,8 @@ class DockerSandbox:
 
     async def info(self) -> str:
         lines = []
-        lines.append(f"Sandbox Status:")
-        lines.append(f"  Type: Docker")
+        lines.append("Sandbox Status:")
+        lines.append("  Type: Docker")
         lines.append(f"  Image: {self.image}")
 
         if self._container_id:
@@ -318,7 +314,7 @@ class DockerSandbox:
             if started:
                 lines.append(f"  Started: {started}")
         else:
-            lines.append(f"  Container: not running")
+            lines.append("  Container: not running")
 
         ws = self.workspace_cfg
         lines.append(f"  Workspace mount: {ws.get('mount', False)}")

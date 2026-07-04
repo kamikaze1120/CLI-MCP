@@ -1,10 +1,9 @@
 import os
 import tempfile
-from pathlib import Path
 
 import yaml
 
-from cli_mcp.config import load_config, DEFAULT_CONFIG, _deep_merge
+from cli_mcp.config import DEFAULT_CONFIG, _deep_merge, load_config
 
 
 class TestConfigLoading:
@@ -52,3 +51,14 @@ class TestConfigLoading:
 
         os.unlink(f.name)
         assert config["sandbox"]["type"] == "docker"
+
+
+class TestDefaultsIsolation:
+    def test_load_config_does_not_mutate_defaults(self):
+        original_image = DEFAULT_CONFIG["sandbox"]["image"]
+        config = load_config("/nonexistent/cli-mcp.yaml")
+        config["sandbox"]["image"] = "mutated:latest"
+        config["security"]["blocklist"].clear()
+
+        assert DEFAULT_CONFIG["sandbox"]["image"] == original_image
+        assert len(DEFAULT_CONFIG["security"]["blocklist"]) > 0

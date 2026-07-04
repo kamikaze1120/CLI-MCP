@@ -2,7 +2,7 @@
 # cli-mcp-tools — Pre-built Docker image with all common CLI tools
 # =============================================================================
 # Build:   docker build -t cli-mcp-tools:latest .
-# Pull:    docker pull ghcr.io/yourusername/cli-mcp-tools:latest
+#          (or from an installed package: cli-mcp --build-image)
 # =============================================================================
 
 FROM ubuntu:24.04 AS base
@@ -12,6 +12,9 @@ ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 ENV PYTHONUNBUFFERED=1
 ENV NODE_ENV=development
+# Ubuntu 24.04 marks the system Python as externally managed (PEP 668);
+# this image is a disposable sandbox, so global pip installs are fine.
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -66,7 +69,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     time \
     tree \
     htop \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    # Ubuntu packages fd as 'fdfind'; expose it under its upstream name too
+    && ln -s "$(command -v fdfind)" /usr/local/bin/fd
 
 # ── Layer 3: Node.js 22 LTS ──────────────────────────────────────────────────
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
@@ -80,7 +85,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
     python3-venv \
     && rm -rf /var/lib/apt/lists/* \
-    && pip3 install --no-cache-dir --upgrade pip \
     && pip3 install --no-cache-dir \
         virtualenv \
         uv
@@ -125,8 +129,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # ── Layer 10: Cleanup ────────────────────────────────────────────────────────
 RUN apt-get autoremove -y && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
-    && pip3 cache purge
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /root/.cache/pip
 
 WORKDIR /workspace
 CMD ["sleep", "infinity"]

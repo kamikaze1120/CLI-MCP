@@ -5,6 +5,8 @@ import platform
 import re
 from pathlib import Path
 
+_WINDOWS_DRIVE_RE = re.compile(r"^([A-Za-z]):[\\/](.*)")
+
 
 def is_windows() -> bool:
     return platform.system() == "Windows"
@@ -22,7 +24,7 @@ def to_container_path(
     if not path.is_absolute():
         return os.path.join(container_workspace, host_path)
 
-    match = re.match(r"^([A-Za-z]):\\(.*)", str(path))
+    match = _WINDOWS_DRIVE_RE.match(str(path))
     if match:
         drive = match.group(1).lower()
         rest = match.group(2).replace("\\", "/")
@@ -43,7 +45,12 @@ def to_container_path(
 
 
 def normalize_path(path: str) -> str:
-    if is_windows() and "\\" in path:
+    """Convert backslash separators to forward slashes in Windows-style paths.
+
+    Applies on any platform when the path is clearly Windows-style (drive
+    letter prefix), and to any backslash path when running on Windows.
+    """
+    if "\\" in path and (is_windows() or _WINDOWS_DRIVE_RE.match(path)):
         return path.replace("\\", "/")
     return path
 
@@ -64,7 +71,13 @@ def resolve_workspace(
     return host_root, working_dir
 
 
-def docker_mount_flag(host_path: str, container_path: str, read_only: bool = False) -> str:
+def docker_mount_args(host_path: str, container_path: str, read_only: bool = False) -> list[str]:
+    """Build 'docker run' volume arguments as an argv list (safe for paths with spaces)."""
     host = normalize_path(str(Path(host_path).resolve()))
     ro_flag = ":ro" if read_only else ""
-    return f"-v {host}:{container_path}{ro_flag}"
+    return ["-v", f"{host}:{container_path}{ro_flag}"]
+
+
+def docker_mount_flag(host_path: str, container_path: str, read_only: bool = False) -> str:
+    """String form of docker_mount_args, for display purposes only."""
+    return " ".join(docker_mount_args(host_path, container_path, read_only))

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import copy
 import os
 from pathlib import Path
 from typing import Any
+
 import yaml
 
 DEFAULT_CONFIG: dict[str, Any] = {
@@ -31,7 +33,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "mode": "blocklist",
         "blocklist": [
             {
-                "pattern": "rm\\s+-rf\\s+[\\/\\\\]$",
+                "pattern": (
+                    "rm\\s+(?:-\\w+\\s+)*-\\w*[rR]\\w*(?:\\s+-\\w+)*"
+                    "\\s+[\\/\\\\](?:[\\/\\\\*]|\\s|$)"
+                ),
+                "reason": "Prevents recursive root deletion",
+            },
+            {
+                "pattern": "--no-preserve-root",
                 "reason": "Prevents recursive root deletion",
             },
             {
@@ -47,11 +56,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
                 "reason": "Prevents direct device access",
             },
             {
-                "pattern": "chmod\\s+777\\s+/",
+                "pattern": "chmod\\s+(?:-\\w+\\s+)*777\\s+/(?:\\s|$)",
                 "reason": "Prevents world-writable root",
             },
             {
-                "pattern": "^:\\s*\\(\\s*\\)\\s*\\{",
+                "pattern": ":\\s*\\(\\s*\\)\\s*\\{.*\\|.*&",
                 "reason": "Prevents fork bombs",
             },
         ],
@@ -78,6 +87,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "http": {
             "host": "127.0.0.1",
             "port": 8080,
+            # Name of the environment variable holding the bearer token for
+            # HTTP mode. The token itself is never stored in config files.
             "auth_token_env": "CLI_MCP_AUTH_TOKEN",
         },
     },
@@ -86,7 +97,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
 ENV_OVERRIDES: dict[str, str] = {
     "CLI_MCP_IMAGE": "sandbox.image",
     "CLI_MCP_CONTAINER_NAME": "sandbox.container_name",
-    "CLI_MCP_AUTH_TOKEN": "server.http.auth_token_env",
     "CLI_MCP_TIMEOUT": "tools.command_timeout",
     "CLI_MCP_MAX_TIMEOUT": "security.max_timeout",
     "CLI_MCP_WORKSPACE": "sandbox.workspace.host_path",
@@ -111,7 +121,7 @@ def _deep_get(d: dict[str, Any], keys: list[str]) -> Any:
 
 
 def load_config(path: str | None = None) -> dict[str, Any]:
-    config = DEFAULT_CONFIG.copy()
+    config = copy.deepcopy(DEFAULT_CONFIG)
 
     if path is None:
         candidates = [
@@ -123,13 +133,11 @@ def load_config(path: str | None = None) -> dict[str, Any]:
     else:
         candidates = [Path(path)]
 
-    loaded = False
     for candidate in candidates:
         if candidate.exists():
             with open(candidate) as f:
                 overrides = yaml.safe_load(f) or {}
             _deep_merge(config, overrides)
-            loaded = True
             break
 
     for env_key, config_path in ENV_OVERRIDES.items():
@@ -142,14 +150,15 @@ def load_config(path: str | None = None) -> dict[str, Any]:
 
 
 def _coerce_value(value: str) -> str | int | bool:
-    if value.lower() in ("true", "yes", "1"):
-        return True
-    if value.lower() in ("false", "no", "0"):
-        return False
     try:
         return int(value)
     except ValueError:
-        return value
+        pass
+    if value.lower() in ("true", "yes"):
+        return True
+    if value.lower() in ("false", "no"):
+        return False
+    return value
 
 
 def _deep_merge(base: dict, overrides: dict) -> None:

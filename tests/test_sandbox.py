@@ -1,4 +1,3 @@
-import pytest
 
 from cli_mcp.sandbox import DockerSandbox
 

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 import logging
 import sys
+from pathlib import Path
 
 from .config import load_config
-from .server import create_server
+from .server import create_server, run_http
 
 logger = logging.getLogger("cli-mcp")
 
@@ -20,14 +20,26 @@ def setup_logging(verbose: bool = False) -> None:
     )
 
 
+def find_dockerfile() -> Path | None:
+    candidates = [
+        Path.cwd() / "Dockerfile",
+        Path(__file__).resolve().parents[2] / "Dockerfile",  # repo root (editable install)
+        Path(__file__).resolve().parent / "Dockerfile",  # packaged copy, if any
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def build_image() -> None:
     import subprocess
-    import os
-    from pathlib import Path
 
-    dockerfile = Path(__file__).parent.parent / "Dockerfile"
-    if not dockerfile.exists():
-        print("Error: Dockerfile not found at", dockerfile)
+    dockerfile = find_dockerfile()
+    if dockerfile is None:
+        print("Error: Dockerfile not found.")
+        print("Run this command from a clone of the cli-mcp repository, or pull a")
+        print("pre-built image and set 'sandbox.image' in cli-mcp.yaml instead.")
         sys.exit(1)
 
     print("Building cli-mcp-tools:latest Docker image...")
@@ -107,10 +119,8 @@ def main() -> None:
 
     if "http" in transports:
         http_cfg = config["server"]["http"]
-        host = http_cfg["host"]
-        port = http_cfg["port"]
-        logger.info(f"Starting HTTP server on {host}:{port}...")
-        mcp.run(transport="http", host=host, port=port)
+        logger.info(f"Starting HTTP server on {http_cfg['host']}:{http_cfg['port']}...")
+        run_http(mcp, config)
     else:
         logger.info("Starting stdio server...")
         mcp.run(transport="stdio")

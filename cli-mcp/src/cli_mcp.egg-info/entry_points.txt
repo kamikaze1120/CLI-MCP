@@ -1,2 +1,0 @@
-[console_scripts]
-cli-mcp = cli_mcp.main:main

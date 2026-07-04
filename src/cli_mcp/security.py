@@ -9,6 +9,11 @@ class SecurityError(Exception):
     pass
 
 
+# Shell constructs that would let a command chain into other commands
+# (defeating allowlist mode, since commands run through 'bash -c').
+_SHELL_CHAINING_RE = re.compile(r"[;&|`\n]|\$\(|<\(|>\(")
+
+
 @dataclass
 class BlocklistEntry:
     pattern: str
@@ -64,15 +69,21 @@ class SecurityChecker:
                     f"Tool '{tool}' is not in the allowed list. "
                     f"Allowed: {', '.join(self.config.allowed_tools)}"
                 )
+            if _SHELL_CHAINING_RE.search(args):
+                raise SecurityError(
+                    "Shell chaining characters (;, &, |, `, $(, <(, >() are not "
+                    "permitted in allowlist mode, as they could invoke tools "
+                    "outside the allowed list."
+                )
 
-        if self.config.mode == "blocklist":
-            for entry in self.config.blocklist:
-                if entry.matches(command):
-                    raise SecurityError(
-                        f"Command blocked by security policy: {entry.reason or 'Pattern matched'}\n"
-                        f"  Pattern: {entry.pattern}\n"
-                        f"  Command: {command}"
-                    )
+        # The blocklist applies in every mode.
+        for entry in self.config.blocklist:
+            if entry.matches(command):
+                raise SecurityError(
+                    f"Command blocked by security policy: {entry.reason or 'Pattern matched'}\n"
+                    f"  Pattern: {entry.pattern}\n"
+                    f"  Command: {command}"
+                )
 
         if timeout > self.config.max_timeout:
             raise SecurityError(

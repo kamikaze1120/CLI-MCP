@@ -1,14 +1,8 @@
-import os
-import sys
-from pathlib import Path
 
-import pytest
 
 from cli_mcp.path_utils import (
-    is_windows,
-    to_container_path,
-    normalize_path,
     docker_mount_flag,
+    normalize_path,
 )
 
 
