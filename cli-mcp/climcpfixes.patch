@@ -1,0 +1,2945 @@
+From c8e14dbd41f757068aa05136bd4fc702c91eb67d Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 2 Jul 2026 19:51:36 +0000
+Subject: [PATCH] Fix broken install, image build, HTTP transport, and security
+ gaps
+
+The project did not work as the README described. This change makes the
+documented Quick Start and security claims actually hold:
+
+Structure & install
+- Move the package (pyproject, src/, tests/, Dockerfile, example yaml)
+  from the cli-mcp/ subdirectory to the repo root so
+  'git clone && cd CLI-MCP && pip install .' works as documented
+- Remove committed __pycache__/ and .egg-info/ artifacts; add .gitignore
+- Fix placeholder URLs in pyproject.toml
+
+Broken entry points
+- 'cli-mcp --build-image' looked for the Dockerfile at src/Dockerfile
+  and always failed; it now searches the CWD and the repo root
+- HTTP mode crashed with TypeError: FastMCP.run() takes no host/port.
+  It now serves the streamable-http app via uvicorn on the configured
+  host/port
+- The tools image failed to build on Ubuntu 24.04 (PEP 668
+  externally-managed-environment); set PIP_BREAK_SYSTEM_PACKAGES and
+  drop the failing pip self-upgrade. Also symlink fdfind -> fd
+
+Security claims that were not implemented
+- Timeout enforcement was dead code: asyncio.wait_for wrapped only
+  process creation, so runaway commands hung forever. Timeouts now
+  bound execution and kill the process
+- The HTTP auth token was never checked; requests now require
+  'Authorization: Bearer <token>' when CLI_MCP_AUTH_TOKEN is set, and
+  the server warns loudly when it is not
+- The 'rm -rf /' pattern only matched commands ending in '/'; harden it
+  (flag order, --no-preserve-root) and un-anchor the fork-bomb pattern
+- The blocklist was skipped entirely in allowlist mode; it now applies
+  in every mode, and allowlist mode rejects shell chaining characters
+  that would smuggle in disallowed tools
+
+Bug fixes
+- load_config shallow-copied DEFAULT_CONFIG, leaking mutations into the
+  module-level defaults; use deepcopy
+- Volume mount flags were built by splitting a string, breaking on
+  paths with spaces; build argv lists instead
+- normalize_path now converts Windows drive-letter paths on any
+  platform (fixes the failing test)
+- CLI_MCP_AUTH_TOKEN env override wrote the token value into the field
+  holding the env var name; removed
+- _coerce_value turned CLI_MCP_TIMEOUT=1 into True; parse ints first
+- run_cli/run_script share one validated execution path; run_script no
+  longer double-validates
+
+Docs & CI
+- README: fix clone path, project structure, env var table, auth and
+  endpoint documentation, blocklist table, Docker deployment example
+- Sync cli-mcp.example.yaml with the hardened defaults
+- Add GitHub Actions CI (ruff + pytest on Python 3.10/3.12)
+- Add tests: default blocklist coverage, allowlist chaining, timeout
+  kill behavior, bearer auth middleware, config isolation (32 passing)
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_019DEfVC5xoRh7D6DHrpoGdJ
+---
+ .github/workflows/ci.yml                      |  24 +
+ .gitignore                                    |  25 +
+ cli-mcp/Dockerfile => Dockerfile              |  13 +-
+ cli-mcp/LICENSE => LICENSE                    |   0
+ README.md                                     |  47 +-
+ ...i-mcp.example.yaml => cli-mcp.example.yaml |  21 +-
+ cli-mcp/src/cli_mcp.egg-info/PKG-INFO         | 431 ------------------
+ cli-mcp/src/cli_mcp.egg-info/SOURCES.txt      |  20 -
+ .../src/cli_mcp.egg-info/dependency_links.txt |   1 -
+ cli-mcp/src/cli_mcp.egg-info/entry_points.txt |   2 -
+ cli-mcp/src/cli_mcp.egg-info/requires.txt     |   3 -
+ cli-mcp/src/cli_mcp.egg-info/top_level.txt    |   1 -
+ .../__pycache__/__init__.cpython-312.pyc      | Bin 147 -> 0 bytes
+ .../__pycache__/config.cpython-312.pyc        | Bin 4784 -> 0 bytes
+ .../cli_mcp/__pycache__/main.cpython-312.pyc  | Bin 4658 -> 0 bytes
+ .../__pycache__/path_utils.cpython-312.pyc    | Bin 3186 -> 0 bytes
+ .../__pycache__/sandbox.cpython-312.pyc       | Bin 18353 -> 0 bytes
+ .../__pycache__/security.cpython-312.pyc      | Bin 5931 -> 0 bytes
+ .../__pycache__/server.cpython-312.pyc        | Bin 7652 -> 0 bytes
+ cli-mcp/src/cli_mcp/server.py                 | 169 -------
+ .../__pycache__/__init__.cpython-312.pyc      | Bin 141 -> 0 bytes
+ .../test_config.cpython-312-pytest-9.0.3.pyc  | Bin 6769 -> 0 bytes
+ ...st_path_utils.cpython-312-pytest-9.0.3.pyc | Bin 3928 -> 0 bytes
+ .../test_sandbox.cpython-312-pytest-9.0.3.pyc | Bin 4001 -> 0 bytes
+ ...test_security.cpython-312-pytest-9.0.3.pyc | Bin 13560 -> 0 bytes
+ cli-mcp/pyproject.toml => pyproject.toml      |   7 +-
+ {cli-mcp/src => src}/cli_mcp/__init__.py      |   0
+ {cli-mcp/src => src}/cli_mcp/config.py        |  33 +-
+ {cli-mcp/src => src}/cli_mcp/main.py          |  32 +-
+ {cli-mcp/src => src}/cli_mcp/path_utils.py    |  21 +-
+ {cli-mcp/src => src}/cli_mcp/sandbox.py       | 126 +++--
+ {cli-mcp/src => src}/cli_mcp/security.py      |  27 +-
+ src/cli_mcp/server.py                         | 240 ++++++++++
+ {cli-mcp/tests => tests}/__init__.py          |   0
+ {cli-mcp/tests => tests}/test_config.py       |  14 +-
+ {cli-mcp/tests => tests}/test_path_utils.py   |   8 +-
+ {cli-mcp/tests => tests}/test_sandbox.py      |   1 -
+ tests/test_sandbox_timeout.py                 |  39 ++
+ {cli-mcp/tests => tests}/test_security.py     |  70 +++
+ tests/test_server.py                          |  77 ++++
+ 40 files changed, 688 insertions(+), 764 deletions(-)
+ create mode 100644 .github/workflows/ci.yml
+ create mode 100644 .gitignore
+ rename cli-mcp/Dockerfile => Dockerfile (91%)
+ rename cli-mcp/LICENSE => LICENSE (100%)
+ rename cli-mcp/cli-mcp.example.yaml => cli-mcp.example.yaml (66%)
+ delete mode 100644 cli-mcp/src/cli_mcp.egg-info/PKG-INFO
+ delete mode 100644 cli-mcp/src/cli_mcp.egg-info/SOURCES.txt
+ delete mode 100644 cli-mcp/src/cli_mcp.egg-info/dependency_links.txt
+ delete mode 100644 cli-mcp/src/cli_mcp.egg-info/entry_points.txt
+ delete mode 100644 cli-mcp/src/cli_mcp.egg-info/requires.txt
+ delete mode 100644 cli-mcp/src/cli_mcp.egg-info/top_level.txt
+ delete mode 100644 cli-mcp/src/cli_mcp/__pycache__/__init__.cpython-312.pyc
+ delete mode 100644 cli-mcp/src/cli_mcp/__pycache__/config.cpython-312.pyc
+ delete mode 100644 cli-mcp/src/cli_mcp/__pycache__/main.cpython-312.pyc
+ delete mode 100644 cli-mcp/src/cli_mcp/__pycache__/path_utils.cpython-312.pyc
+ delete mode 100644 cli-mcp/src/cli_mcp/__pycache__/sandbox.cpython-312.pyc
+ delete mode 100644 cli-mcp/src/cli_mcp/__pycache__/security.cpython-312.pyc
+ delete mode 100644 cli-mcp/src/cli_mcp/__pycache__/server.cpython-312.pyc
+ delete mode 100644 cli-mcp/src/cli_mcp/server.py
+ delete mode 100644 cli-mcp/tests/__pycache__/__init__.cpython-312.pyc
+ delete mode 100644 cli-mcp/tests/__pycache__/test_config.cpython-312-pytest-9.0.3.pyc
+ delete mode 100644 cli-mcp/tests/__pycache__/test_path_utils.cpython-312-pytest-9.0.3.pyc
+ delete mode 100644 cli-mcp/tests/__pycache__/test_sandbox.cpython-312-pytest-9.0.3.pyc
+ delete mode 100644 cli-mcp/tests/__pycache__/test_security.cpython-312-pytest-9.0.3.pyc
+ rename cli-mcp/pyproject.toml => pyproject.toml (88%)
+ rename {cli-mcp/src => src}/cli_mcp/__init__.py (100%)
+ rename {cli-mcp/src => src}/cli_mcp/config.py (84%)
+ rename {cli-mcp/src => src}/cli_mcp/main.py (76%)
+ rename {cli-mcp/src => src}/cli_mcp/path_utils.py (67%)
+ rename {cli-mcp/src => src}/cli_mcp/sandbox.py (76%)
+ rename {cli-mcp/src => src}/cli_mcp/security.py (76%)
+ create mode 100644 src/cli_mcp/server.py
+ rename {cli-mcp/tests => tests}/__init__.py (100%)
+ rename {cli-mcp/tests => tests}/test_config.py (74%)
+ rename {cli-mcp/tests => tests}/test_path_utils.py (86%)
+ rename {cli-mcp/tests => tests}/test_sandbox.py (99%)
+ create mode 100644 tests/test_sandbox_timeout.py
+ rename {cli-mcp/tests => tests}/test_security.py (55%)
+ create mode 100644 tests/test_server.py
+
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+new file mode 100644
+index 0000000..9587e4e
+--- /dev/null
++++ b/.github/workflows/ci.yml
+@@ -0,0 +1,24 @@
++name: CI
++
++on:
++  push:
++    branches: [main]
++  pull_request:
++
++jobs:
++  test:
++    runs-on: ubuntu-latest
++    strategy:
++      matrix:
++        python-version: ["3.10", "3.12"]
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-python@v5
++        with:
++          python-version: ${{ matrix.python-version }}
++      - name: Install
++        run: pip install -e ".[dev]"
++      - name: Lint
++        run: ruff check src/ tests/
++      - name: Test
++        run: pytest -v
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..3befb2c
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,25 @@
++# Python
++__pycache__/
++*.py[cod]
++*.egg-info/
++build/
++dist/
++.eggs/
++
++# Virtual environments
++.venv/
++venv/
++
++# Tooling caches
++.pytest_cache/
++.ruff_cache/
++.mypy_cache/
++
++# Local config
++cli-mcp.yaml
++cli-mcp.yml
++
++# OS / editor
++.DS_Store
++.idea/
++.vscode/
+diff --git a/cli-mcp/Dockerfile b/Dockerfile
+similarity index 91%
+rename from cli-mcp/Dockerfile
+rename to Dockerfile
+index 48ac250..683e338 100644
+--- a/cli-mcp/Dockerfile
++++ b/Dockerfile
+@@ -2,7 +2,7 @@
+ # cli-mcp-tools — Pre-built Docker image with all common CLI tools
+ # =============================================================================
+ # Build:   docker build -t cli-mcp-tools:latest .
+-# Pull:    docker pull ghcr.io/yourusername/cli-mcp-tools:latest
++#          (or from an installed package: cli-mcp --build-image)
+ # =============================================================================
+ 
+ FROM ubuntu:24.04 AS base
+@@ -12,6 +12,9 @@ ENV LANG=C.UTF-8
+ ENV LC_ALL=C.UTF-8
+ ENV PYTHONUNBUFFERED=1
+ ENV NODE_ENV=development
++# Ubuntu 24.04 marks the system Python as externally managed (PEP 668);
++# this image is a disposable sandbox, so global pip installs are fine.
++ENV PIP_BREAK_SYSTEM_PACKAGES=1
+ 
+ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+ 
+@@ -66,7 +69,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
+     time \
+     tree \
+     htop \
+-    && rm -rf /var/lib/apt/lists/*
++    && rm -rf /var/lib/apt/lists/* \
++    # Ubuntu packages fd as 'fdfind'; expose it under its upstream name too
++    && ln -s "$(command -v fdfind)" /usr/local/bin/fd
+ 
+ # ── Layer 3: Node.js 22 LTS ──────────────────────────────────────────────────
+ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+@@ -80,7 +85,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
+     python3-pip \
+     python3-venv \
+     && rm -rf /var/lib/apt/lists/* \
+-    && pip3 install --no-cache-dir --upgrade pip \
+     && pip3 install --no-cache-dir \
+         virtualenv \
+         uv
+@@ -125,8 +129,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
+ 
+ # ── Layer 10: Cleanup ────────────────────────────────────────────────────────
+ RUN apt-get autoremove -y && apt-get clean \
+-    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
+-    && pip3 cache purge
++    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /root/.cache/pip
+ 
+ WORKDIR /workspace
+ CMD ["sleep", "infinity"]
+diff --git a/cli-mcp/LICENSE b/LICENSE
+similarity index 100%
+rename from cli-mcp/LICENSE
+rename to LICENSE
+diff --git a/README.md b/README.md
+index 4122914..6542fdf 100644
+--- a/README.md
++++ b/README.md
+@@ -67,7 +67,7 @@ Claude: *runs `docker exec app df -h`* → "You have 12GB free."
+ | **Cross-platform** | Windows (Docker Desktop + WSL2), macOS, Linux — identical experience everywhere. |
+ | **Dual transport** | `stdio` for local development ($0), HTTP for remote/team deployment ($5-10/mo VPS). |
+ | **Configurable** | YAML config file with environment variable overrides. Check into repo for team consistency. |
+-| **Pre-built image** | [Dockerfile](Dockerfile) included. Build once or pull from registry. All tools in one layer-cached image (~1.5GB). |
++| **Pre-built image** | [Dockerfile](Dockerfile) included. Build once with `cli-mcp --build-image`, or point `sandbox.image` at any image of your own. All tools in one layer-cached image (~1.5GB). |
+ 
+ ---
+ 
+@@ -107,8 +107,8 @@ Claude: *runs `docker exec app df -h`* → "You have 12GB free."
+ 
+ ```bash
+ # 1. Install
+-git clone https://github.com/yourusername/cli-mcp.git
+-cd cli-mcp
++git clone https://github.com/kamikaze1120/CLI-MCP.git
++cd CLI-MCP
+ pip install .
+ 
+ # 2. Build the tools image (5-15 min first time)
+@@ -190,11 +190,13 @@ See [cli-mcp.example.yaml](cli-mcp.example.yaml) for the complete configuration
+ |---|---|---|
+ | `CLI_MCP_IMAGE` | `sandbox.image` | `CLI_MCP_IMAGE=ghcr.io/myorg/cli-mcp-tools:v2` |
+ | `CLI_MCP_CONTAINER_NAME` | `sandbox.container_name` | `CLI_MCP_CONTAINER_NAME=my-sandbox` |
+-| `CLI_MCP_AUTH_TOKEN` | `server.http.auth_token_env` | `CLI_MCP_AUTH_TOKEN=sk-abc123...` |
+ | `CLI_MCP_TIMEOUT` | `tools.command_timeout` | `CLI_MCP_TIMEOUT=120` |
+ | `CLI_MCP_MAX_TIMEOUT` | `security.max_timeout` | `CLI_MCP_MAX_TIMEOUT=600` |
+ | `CLI_MCP_WORKSPACE` | `sandbox.workspace.host_path` | `CLI_MCP_WORKSPACE=/home/user/projects` |
+ 
++`CLI_MCP_AUTH_TOKEN` is not a config override — it holds the bearer token itself, read at
++startup when running with the HTTP transport (see [Remote Deployment](#-remote-deployment)).
++
+ ---
+ 
+ ## 🛠️ Tools Reference
+@@ -261,12 +263,16 @@ The following patterns are blocked by default:
+ 
+ | Pattern | Reason |
+ |---|---|
+-| `rm -rf /` | Prevents recursive root deletion |
++| `rm -rf /` (any flag order, incl. `--no-preserve-root`) | Prevents recursive root deletion |
+ | `dd if=` | Prevents raw disk writes |
+ | `mkfs.*` | Prevents filesystem formatting |
+ | `> /dev/` | Prevents direct device access |
+ | `chmod 777 /` | Prevents world-writable root |
+-| Fork bombs | Prevents denial-of-service |
++| Fork bombs (anywhere in the command) | Prevents denial-of-service |
++
++The blocklist applies in **both** modes. In allowlist mode, shell chaining characters
++(`;`, `&`, `|`, backticks, `$(...)`) are additionally rejected, so an allowed tool can't
++be used to smuggle in a disallowed one.
+ 
+ ### Customizing security
+ 
+@@ -305,24 +311,33 @@ CLI MCP Gateway can run as an HTTP server for team access or integration with re
+ ### Start with HTTP
+ 
+ ```bash
+-# Start with HTTP transport
++# Set auth token first (recommended), then start with HTTP transport
++export CLI_MCP_AUTH_TOKEN=$(openssl rand -hex 32)
+ cli-mcp --transport http --host 0.0.0.0 --port 8080
++```
++
++The MCP endpoint is served at `http://<host>:<port>/mcp` (streamable HTTP transport).
++When `CLI_MCP_AUTH_TOKEN` is set, every request must include:
+ 
+-# Set auth token (recommended)
+-export CLI_MCP_AUTH_TOKEN=$(openssl rand -hex 32)
+-cli-mcp --transport http
+ ```
++Authorization: Bearer <token>
++```
++
++Requests without the token are rejected with `401 Unauthorized`. If the variable is
++unset, the server logs a loud warning and runs unauthenticated — only do that on
++localhost.
+ 
+ ### Docker deployment
+ 
+ ```bash
+-# Run the MCP server itself in Docker
++# Run the MCP server itself in Docker (installs the gateway into the tools image)
+ docker run -d \
+   --name cli-mcp-server \
+   -v /var/run/docker.sock:/var/run/docker.sock:ro \
+   -p 8080:8080 \
++  -e CLI_MCP_AUTH_TOKEN=<your-token> \
+   cli-mcp-tools:latest \
+-  cli-mcp --transport http --host 0.0.0.0
++  bash -c "pip install git+https://github.com/kamikaze1120/CLI-MCP.git && cli-mcp --transport http --host 0.0.0.0"
+ ```
+ 
+ ### Production considerations
+@@ -374,17 +389,17 @@ Yes. Docker Desktop on Windows with WSL2 backend is fully supported. The path tr
+ 
+ ### How do I update the tools?
+ 
+-Rebuild the image: `cli-mcp --build-image` and reset the sandbox: `reset_sandbox()`. Or pull an updated version: `docker pull ghcr.io/yourusername/cli-mcp-tools:latest` → `reset_sandbox()`.
++Rebuild the image from the repo checkout: `cli-mcp --build-image`, then reset the sandbox with the `reset_sandbox()` tool so a fresh container is created from the new image.
+ 
+ ---
+ 
+ ## 📦 Project Structure
+ 
+ ```
+-cli-mcp/
+-├── src/
++CLI-MCP/
++├── src/cli_mcp/
+ │   ├── main.py          # CLI entrypoint with argparse
+-│   ├── server.py        # FastMCP server & tool definitions
++│   ├── server.py        # FastMCP server, tool definitions & HTTP auth
+ │   ├── sandbox.py       # Docker container lifecycle manager
+ │   ├── security.py      # Blocklist/allowlist & output limits
+ │   ├── config.py        # YAML config loader with env overrides
+diff --git a/cli-mcp/cli-mcp.example.yaml b/cli-mcp.example.yaml
+similarity index 66%
+rename from cli-mcp/cli-mcp.example.yaml
+rename to cli-mcp.example.yaml
+index 97843ac..da22583 100644
+--- a/cli-mcp/cli-mcp.example.yaml
++++ b/cli-mcp.example.yaml
+@@ -12,15 +12,21 @@ sandbox:
+       read_only: true
+   workspace:
+     mount: true
+-    host_path: ""
++    host_path: ""          # empty = current working directory of the server
+     container_path: /workspace
+     read_only: false
+ 
+ # ── Security Settings ─────────────────────────────────────────────────────────
+ security:
++  # "blocklist": everything is allowed except patterns below.
++  # "allowlist": only tools in allowed_tools may run, shell chaining
++  #              (;, &, |, `, $() ...) is rejected, and the blocklist
++  #              below still applies.
+   mode: blocklist
+   blocklist:
+-    - pattern: "rm\\s+-rf\\s+[\\/\\\\]$"
++    - pattern: "rm\\s+(?:-\\w+\\s+)*-\\w*[rR]\\w*(?:\\s+-\\w+)*\\s+[\\/\\\\](?:[\\/\\\\*]|\\s|$)"
++      reason: "Prevents recursive root deletion"
++    - pattern: "--no-preserve-root"
+       reason: "Prevents recursive root deletion"
+     - pattern: "dd\\s+if="
+       reason: "Prevents raw disk writes"
+@@ -28,8 +34,14 @@ security:
+       reason: "Prevents filesystem formatting"
+     - pattern: ">\\s*/dev/"
+       reason: "Prevents direct device access"
+-    - pattern: "chmod\\s+777\\s+/"
++    - pattern: "chmod\\s+(?:-\\w+\\s+)*777\\s+/(?:\\s|$)"
+       reason: "Prevents world-writable root"
++    - pattern: ":\\s*\\(\\s*\\)\\s*\\{.*\\|.*&"
++      reason: "Prevents fork bombs"
++  # allowed_tools:        # used only in allowlist mode
++  #   - git
++  #   - npm
++  #   - python3
+   max_timeout: 300
+   max_output_lines: 2000
+   max_output_bytes: 1048576
+@@ -55,4 +67,7 @@ server:
+   http:
+     host: 127.0.0.1
+     port: 8080
++    # Name of the environment variable that holds the bearer token for HTTP
++    # mode. If that variable is set, every HTTP request must send
++    # "Authorization: Bearer <token>". Never put the token itself in this file.
+     auth_token_env: CLI_MCP_AUTH_TOKEN
+diff --git a/cli-mcp/src/cli_mcp.egg-info/PKG-INFO b/cli-mcp/src/cli_mcp.egg-info/PKG-INFO
+deleted file mode 100644
+index 26a1dbc..0000000
+--- a/cli-mcp/src/cli_mcp.egg-info/PKG-INFO
++++ /dev/null
+@@ -1,431 +0,0 @@
+-Metadata-Version: 2.4
+-Name: cli-mcp
+-Version: 1.0.0
+-Summary: Universal sandboxed CLI gateway for MCP — run any CLI tool through AI assistants
+-Author-email: cli-mcp <hello@cli-mcp.dev>
+-License: MIT
+-Project-URL: Homepage, https://github.com/yourusername/cli-mcp
+-Project-URL: Repository, https://github.com/yourusername/cli-mcp
+-Project-URL: Documentation, https://github.com/yourusername/cli-mcp#readme
+-Keywords: mcp,cli,docker,sandbox,ai,claude,model-context-protocol
+-Classifier: Development Status :: 4 - Beta
+-Classifier: Intended Audience :: Developers
+-Classifier: License :: OSI Approved :: MIT License
+-Classifier: Programming Language :: Python :: 3
+-Classifier: Programming Language :: Python :: 3.10
+-Classifier: Programming Language :: Python :: 3.11
+-Classifier: Programming Language :: Python :: 3.12
+-Classifier: Programming Language :: Python :: 3.13
+-Classifier: Topic :: Software Development :: Build Tools
+-Classifier: Topic :: Scientific Engineering :: Artificial Intelligence
+-Requires-Python: >=3.10
+-Description-Content-Type: text/markdown
+-License-File: LICENSE
+-Requires-Dist: mcp[cli]>=1.6.0
+-Requires-Dist: pyyaml>=6.0
+-Requires-Dist: pydantic>=2.0
+-Dynamic: license-file
+-
+-# 🛡️ CLI MCP Gateway
+-
+-**Run any CLI command through AI assistants — safely sandboxed in Docker.**
+-
+-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](pyproject.toml)
+-[![Docker](https://img.shields.io/badge/docker-required-2496ED?logo=docker)](https://docker.com)
+-
+-CLI MCP Gateway is a [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that gives AI assistants like Claude Desktop, Claude Code, and Cursor the ability to execute any CLI tool inside an isolated Docker container.
+-
+-**No more context copying. No more switching terminals. Just ask.**
+-
+----
+-
+-## ✨ Features
+-
+-- **🧰 Universal CLI access** — git, npm, python, aws, gcloud, gh, docker, curl, jq, ripgrep, and 50+ tools pre-installed
+-- **🔒 Sandboxed by default** — every command runs inside a disposable Docker container with configurable security policies
+-- **⚡ Persistent container** — near-instant execution with state preserved across commands
+-- **🛡️ Built-in security** — configurable blocklist/allowlist, timeout enforcement, output truncation
+-- **🖥️ Cross-platform** — works on macOS, Linux, and Windows (Docker Desktop + WSL2)
+-- **🌐 Dual transport** — stdio for local development, HTTP for remote/team deployment
+-- **🔧 Fully configurable** — YAML config file with environment variable overrides
+-- **📦 Pre-built Docker image** — all tools included, ready to pull or build
+-
+----
+-
+-## 🏗️ Architecture
+-
+-```
+-┌─────────────────────────────────────────────────────────┐
+-│  MCP Host (Claude Desktop / Claude Code / Cursor)       │
+-│    (stdio for local, HTTP for remote)                    │
+-└──────────────────────┬──────────────────────────────────┘
+-                       │ JSON-RPC 2.0
+-┌──────────────────────▼──────────────────────────────────┐
+-│              CLI MCP Gateway (Python FastMCP)             │
+-│                                                           │
+-│  Tools:  run_cli()  list_tools()  sandbox_info()          │
+-│          reset_sandbox()  run_script()                     │
+-│                                                           │
+-│  Config: cli-mcp.yaml  |  ENV vars                        │
+-└──────────────────────┬──────────────────────────────────┘
+-                       │ docker exec
+-┌──────────────────────▼──────────────────────────────────┐
+-│  Persistent Docker Container (cli-mcp-sandbox)            │
+-│  ┌────────────────────────────────────────────────────┐  │
+-│  │  cli-mcp-tools:latest                               │  │
+-│  │  • git, node/npm, python3, go, rust, java          │  │
+-│  │  • aws-cli, gcloud, gh, docker-cli                 │  │
+-│  │  • curl, jq, ripgrep, fd, yq, tmux, vim...        │  │
+-│  │  • workspace: /workspace ↔ host CWD               │  │
+-│  │  • Docker socket mounted for docker-in-docker      │  │
+-│  └────────────────────────────────────────────────────┘  │
+-└──────────────────────────────────────────────────────────┘
+-```
+-
+----
+-
+-## 🚀 Quick Start
+-
+-### Prerequisites
+-
+-- **Python 3.10+** — [Install Python](https://www.python.org/downloads/)
+-- **Docker** — [Docker Desktop](https://www.docker.com/products/docker-desktop/) (macOS/Windows) or `docker` CLI (Linux)
+-- **pip** (comes with Python) or **uv** (`pip install uv`)
+-
+-### 1. Install
+-
+-```bash
+-# Clone the repo
+-git clone https://github.com/yourusername/cli-mcp.git
+-cd cli-mcp
+-
+-# Install with pip
+-pip install .
+-
+-# Or install in editable mode for development
+-pip install -e .
+-```
+-
+-### 2. Build the Docker image
+-
+-```bash
+-# Build the tools image (5-15 minutes)
+-cli-mcp --build-image
+-
+-# Verify
+-docker images cli-mcp-tools
+-```
+-
+-### 3. Start the server
+-
+-```bash
+-# Default mode: stdio (for Claude Desktop / Claude Code)
+-cli-mcp
+-
+-# Or with verbose logging
+-cli-mcp -v
+-```
+-
+-### 4. Connect your AI assistant
+-
+-<details>
+-<summary><b>Claude Desktop</b></summary>
+-
+-Add to your `claude_desktop_config.json`:
+-
+-```json
+-{
+-  "mcpServers": {
+-    "cli-mcp": {
+-      "command": "cli-mcp",
+-      "args": []
+-    }
+-  }
+-}
+-```
+-</details>
+-
+-<details>
+-<summary><b>Claude Code</b></summary>
+-
+-```bash
+-claude mcp add cli-mcp -- cli-mcp
+-```
+-</details>
+-
+-<details>
+-<summary><b>Cursor</b></summary>
+-
+-Add to Cursor settings → MCP Servers:
+-
+-| Field | Value |
+-|---|---|
+-| Name | `cli-mcp` |
+-| Type | `command` |
+-| Command | `cli-mcp` |
+-</details>
+-
+----
+-
+-## 🔧 Configuration
+-
+-CLI MCP Gateway is configured via a YAML file. It looks for these files in order:
+-
+-1. `./cli-mcp.yaml` (project-local)
+-2. `./cli-mcp.yml`
+-3. `~/.config/cli-mcp/config.yaml`
+-4. `~/.config/cli-mcp/config.yml`
+-
+-### Minimal config
+-
+-```yaml
+-# cli-mcp.yaml
+-sandbox:
+-  image: cli-mcp-tools:latest
+-  workspace:
+-    host_path: /home/user/projects
+-```
+-
+-### Full configuration reference
+-
+-See [cli-mcp.example.yaml](cli-mcp.example.yaml) for the complete configuration with all options documented.
+-
+-### Environment variable overrides
+-
+-| Variable | Config Path | Example |
+-|---|---|---|
+-| `CLI_MCP_IMAGE` | `sandbox.image` | `CLI_MCP_IMAGE=ghcr.io/myorg/cli-mcp-tools:v2` |
+-| `CLI_MCP_CONTAINER_NAME` | `sandbox.container_name` | `CLI_MCP_CONTAINER_NAME=my-sandbox` |
+-| `CLI_MCP_AUTH_TOKEN` | `server.http.auth_token_env` | `CLI_MCP_AUTH_TOKEN=sk-abc123...` |
+-| `CLI_MCP_TIMEOUT` | `tools.command_timeout` | `CLI_MCP_TIMEOUT=120` |
+-| `CLI_MCP_MAX_TIMEOUT` | `security.max_timeout` | `CLI_MCP_MAX_TIMEOUT=600` |
+-| `CLI_MCP_WORKSPACE` | `sandbox.workspace.host_path` | `CLI_MCP_WORKSPACE=/home/user/projects` |
+-
+----
+-
+-## 🛠️ Tools Reference
+-
+-### `run_cli`
+-
+-Execute any CLI command inside the sandboxed Docker container.
+-
+-| Parameter | Type | Default | Description |
+-|---|---|---|---|
+-| `tool` | `string` | — | CLI command to run (git, npm, python3, aws, gh, etc.) |
+-| `args` | `string` | `""` | Space-separated arguments and flags |
+-| `cwd` | `string` | `"."` | Working directory relative to workspace mount |
+-| `timeout` | `integer` | `60` | Max execution time in seconds (max: 300) |
+-
+-**Examples:**
+-
+-Ask your AI assistant:
+-> "Show me the last 5 git commits"
+-> "Run npm test in the current project"
+-> "Check AWS S3 buckets"
+-> "Format this Python file with black"
+-
+-### `list_tools`
+-
+-List all CLI tools available in the sandbox container.
+-
+-### `sandbox_info`
+-
+-Show the current sandbox configuration and container status (image, uptime, workspace mount, security mode).
+-
+-### `reset_sandbox`
+-
+-Destroy and recreate the sandbox container. Use this to get a clean environment.
+-
+-### `run_script`
+-
+-Execute a short script inline without creating a file.
+-
+-| Parameter | Type | Default | Description |
+-|---|---|---|---|
+-| `language` | `string` | — | `python`, `node`, `bash`, or `sh` |
+-| `code` | `string` | — | The script content to execute |
+-| `cwd` | `string` | `"."` | Working directory |
+-| `timeout` | `integer` | `60` | Max execution time |
+-
+----
+-
+-## 🛡️ Security
+-
+-CLI MCP Gateway runs every command inside an isolated Docker container, providing strong isolation from your host system.
+-
+-### Security layers
+-
+-1. **Docker containerization** — commands run in an ephemeral container with no host access (except mounted volumes)
+-2. **Command blocklist** — regex patterns that block dangerous commands (configurable)
+-3. **Timeout enforcement** — commands are killed after the configured timeout
+-4. **Output limits** — prevents runaway output from flooding the AI context
+-5. **Allowlist mode** — restrict to specific tools only (for production/team deployments)
+-
+-### Built-in blocklist
+-
+-The following patterns are blocked by default:
+-
+-| Pattern | Reason |
+-|---|---|
+-| `rm -rf /` | Prevents recursive root deletion |
+-| `dd if=` | Prevents raw disk writes |
+-| `mkfs.*` | Prevents filesystem formatting |
+-| `> /dev/` | Prevents direct device access |
+-| `chmod 777 /` | Prevents world-writable root |
+-| Fork bombs | Prevents denial-of-service |
+-
+-### Customizing security
+-
+-```yaml
+-security:
+-  mode: blocklist           # or "allowlist"
+-  blocklist:
+-    - pattern: "my-dangerous-command"
+-      reason: "Protects production data"
+-  allowed_tools:            # used only in allowlist mode
+-    - git
+-    - npm
+-    - python3
+-```
+-
+-### Docker socket security
+-
+-By default, the Docker socket is mounted read-only, allowing `docker` commands inside the sandbox. This enables docker-in-docker workflows. Remove the mount if you don't need it:
+-
+-```yaml
+-sandbox:
+-  volume_mounts: []  # removes Docker socket mount
+-```
+-
+-For additional security in production:
+-- Set `sandbox.workspace.read_only: true`
+-- Use allowlist mode instead of blocklist
+-- Run with a non-root user inside the container
+-
+----
+-
+-## 🌐 Remote Deployment
+-
+-CLI MCP Gateway can run as an HTTP server for team access or integration with remote workflows.
+-
+-### Start with HTTP
+-
+-```bash
+-# Start with HTTP transport
+-cli-mcp --transport http --host 0.0.0.0 --port 8080
+-
+-# Set auth token (recommended)
+-export CLI_MCP_AUTH_TOKEN=$(openssl rand -hex 32)
+-cli-mcp --transport http
+-```
+-
+-### Docker deployment
+-
+-```bash
+-# Run the MCP server itself in Docker
+-docker run -d \
+-  --name cli-mcp-server \
+-  -v /var/run/docker.sock:/var/run/docker.sock:ro \
+-  -p 8080:8080 \
+-  cli-mcp-tools:latest \
+-  cli-mcp --transport http --host 0.0.0.0
+-```
+-
+-### Production considerations
+-
+-- 🔐 **Always set an auth token** for HTTP mode
+-- 🔒 Use HTTPS behind a reverse proxy (nginx, Caddy, or Cloudflare Tunnel)
+-- 📊 Add rate limiting at the reverse proxy level
+-- 🔄 Use `--security mode: allowlist` for team deployments
+-- 📝 Set up logging to a file with `--verbose`
+-
+----
+-
+-## 💡 Use Cases
+-
+-### Development assistant
+-Let Claude run git commands, install npm packages, run tests, and format code — all through natural language.
+-
+-### DevOps / Cloud operations
+-Query AWS resources, deploy with gcloud, manage Docker containers, and run kubectl commands without leaving the chat.
+-
+-### Scripting & automation
+-Generate and execute Python scripts, bash one-liners, or Node.js snippets in seconds.
+-
+-### CI/CD debugging
+-Debug pipeline issues by running the same commands your CI runner would execute — in an equivalent environment.
+-
+-### Learning & experimentation
+-Try out CLI tools, test commands, and explore APIs in a safe, isolated environment before using them in production.
+-
+----
+-
+-## ❓ FAQ
+-
+-### Why Docker instead of running commands directly?
+-
+-Docker provides strong isolation, a consistent environment across platforms, and prevents accidental damage to the host system. It also means the available tools are the same regardless of what's installed on the host.
+-
+-### Can I use my own Docker image?
+-
+-Yes. Set `sandbox.image` in the config or `CLI_MCP_IMAGE` environment variable to any Docker image. It just needs the tools you want to use and `sleep infinity` (or similar) as the default command.
+-
+-### Is this free?
+-
+-Yes, it's MIT-licensed open source. The only costs are Docker Desktop (free for personal use) and optionally a VPS (~$5-10/month) if you want remote HTTP access.
+-
+-### Does it work on Windows?
+-
+-Yes. Docker Desktop on Windows with WSL2 backend is fully supported. The path translation layer handles Windows paths automatically.
+-
+-### How do I update the tools?
+-
+-Rebuild the image: `cli-mcp --build-image` and reset the sandbox: `reset_sandbox()`. Or pull an updated version: `docker pull ghcr.io/yourusername/cli-mcp-tools:latest` → `reset_sandbox()`.
+-
+----
+-
+-## 📦 Project Structure
+-
+-```
+-cli-mcp/
+-├── src/
+-│   ├── main.py          # CLI entrypoint with argparse
+-│   ├── server.py        # FastMCP server & tool definitions
+-│   ├── sandbox.py       # Docker container lifecycle manager
+-│   ├── security.py      # Blocklist/allowlist & output limits
+-│   ├── config.py        # YAML config loader with env overrides
+-│   └── path_utils.py    # Cross-platform path translation
+-├── tests/               # pytest test suite
+-├── Dockerfile           # Pre-built tools image (Ubuntu 24.04)
+-├── cli-mcp.example.yaml # Documented configuration reference
+-└── pyproject.toml       # Python package metadata
+-```
+-
+----
+-
+-## 🤝 Contributing
+-
+-Contributions are welcome! Here's how to get started:
+-
+-1. Fork the repository
+-2. Create a feature branch: `git checkout -b feat/my-feature`
+-3. Install dev dependencies: `pip install -e ".[dev]"`
+-4. Run tests: `pytest`
+-5. Submit a pull request
+-
+-Please ensure your code passes linting (`ruff check`) and all tests.
+-
+----
+-
+-## 📄 License
+-
+-[MIT](LICENSE) — Free to use, modify, and distribute. Commercial use is permitted.
+-
+----
+-
+-<div align="center">
+-  <strong>Built with ❤️ for the AI developer community</strong>
+-  <br>
+-  <a href="https://modelcontextprotocol.io">Model Context Protocol</a>
+-</div>
+diff --git a/cli-mcp/src/cli_mcp.egg-info/SOURCES.txt b/cli-mcp/src/cli_mcp.egg-info/SOURCES.txt
+deleted file mode 100644
+index 656c573..0000000
+--- a/cli-mcp/src/cli_mcp.egg-info/SOURCES.txt
++++ /dev/null
+@@ -1,20 +0,0 @@
+-LICENSE
+-README.md
+-pyproject.toml
+-src/cli_mcp/__init__.py
+-src/cli_mcp/config.py
+-src/cli_mcp/main.py
+-src/cli_mcp/path_utils.py
+-src/cli_mcp/sandbox.py
+-src/cli_mcp/security.py
+-src/cli_mcp/server.py
+-src/cli_mcp.egg-info/PKG-INFO
+-src/cli_mcp.egg-info/SOURCES.txt
+-src/cli_mcp.egg-info/dependency_links.txt
+-src/cli_mcp.egg-info/entry_points.txt
+-src/cli_mcp.egg-info/requires.txt
+-src/cli_mcp.egg-info/top_level.txt
+-tests/test_config.py
+-tests/test_path_utils.py
+-tests/test_sandbox.py
+-tests/test_security.py
+\ No newline at end of file
+diff --git a/cli-mcp/src/cli_mcp.egg-info/dependency_links.txt b/cli-mcp/src/cli_mcp.egg-info/dependency_links.txt
+deleted file mode 100644
+index 8b13789..0000000
+--- a/cli-mcp/src/cli_mcp.egg-info/dependency_links.txt
++++ /dev/null
+@@ -1 +0,0 @@
+-
+diff --git a/cli-mcp/src/cli_mcp.egg-info/entry_points.txt b/cli-mcp/src/cli_mcp.egg-info/entry_points.txt
+deleted file mode 100644
+index aea825a..0000000
+--- a/cli-mcp/src/cli_mcp.egg-info/entry_points.txt
++++ /dev/null
+@@ -1,2 +0,0 @@
+-[console_scripts]
+-cli-mcp = cli_mcp.main:main
+diff --git a/cli-mcp/src/cli_mcp.egg-info/requires.txt b/cli-mcp/src/cli_mcp.egg-info/requires.txt
+deleted file mode 100644
+index be324f4..0000000
+--- a/cli-mcp/src/cli_mcp.egg-info/requires.txt
++++ /dev/null
+@@ -1,3 +0,0 @@
+-mcp[cli]>=1.6.0
+-pyyaml>=6.0
+-pydantic>=2.0
+diff --git a/cli-mcp/src/cli_mcp.egg-info/top_level.txt b/cli-mcp/src/cli_mcp.egg-info/top_level.txt
+deleted file mode 100644
+index eb3ecaa..0000000
+--- a/cli-mcp/src/cli_mcp.egg-info/top_level.txt
++++ /dev/null
+@@ -1 +0,0 @@
+-cli_mcp
+diff --git a/cli-mcp/src/cli_mcp/__pycache__/__init__.cpython-312.pyc b/cli-mcp/src/cli_mcp/__pycache__/__init__.cpython-312.pyc
+deleted file mode 100644
+index de908efa303ec3d7206e99e46306830f6490d7fd..0000000000000000000000000000000000000000
+GIT binary patch
+literal 0
+HcmV?d00001
+
+literal 147
+zcmX@j%ge<81Tm{5vOx4>5P=Rpvj9b=GgLBYGWxA#C}INgK7-W!GIF+x2`x@7Dvoh>
+zR&Y#CPAx8uNzTdC%}p+dDK1I|vExDP`1s7c%#!$cy@JYH95%W6DWy57c15f}BN&0W
+Q7{vI<%*e=C#0+Es0NfTL4gdfE
+
+diff --git a/cli-mcp/src/cli_mcp/__pycache__/config.cpython-312.pyc b/cli-mcp/src/cli_mcp/__pycache__/config.cpython-312.pyc
+deleted file mode 100644
+index ee2e37aa0f74dcc05b7585f42b2840807ea2813d..0000000000000000000000000000000000000000
+GIT binary patch
+literal 0
+HcmV?d00001
+
+literal 4784
+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
+
+diff --git a/cli-mcp/src/cli_mcp/__pycache__/main.cpython-312.pyc b/cli-mcp/src/cli_mcp/__pycache__/main.cpython-312.pyc
+deleted file mode 100644
+index 5bae6edec9f7afa6c817c605969ab879513b9618..0000000000000000000000000000000000000000
+GIT binary patch
+literal 0
+HcmV?d00001
+
+literal 4658
+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
+Q*P`;9$qj)M``DEK2SOYsoB#j-
+
+diff --git a/cli-mcp/src/cli_mcp/__pycache__/path_utils.cpython-312.pyc b/cli-mcp/src/cli_mcp/__pycache__/path_utils.cpython-312.pyc
+deleted file mode 100644
+index f2a8083a2aad0b2e58df590f950f1a746e39dc45..0000000000000000000000000000000000000000
+GIT binary patch
+literal 0
+HcmV?d00001
+
+literal 3186
+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
+
+diff --git a/cli-mcp/src/cli_mcp/__pycache__/sandbox.cpython-312.pyc b/cli-mcp/src/cli_mcp/__pycache__/sandbox.cpython-312.pyc
+deleted file mode 100644
+index 232afb5cbfc624b211f5ccce835b46d30ae0116a..0000000000000000000000000000000000000000
+GIT binary patch
+literal 0
+HcmV?d00001
+
+literal 18353
+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
+
+diff --git a/cli-mcp/src/cli_mcp/__pycache__/security.cpython-312.pyc b/cli-mcp/src/cli_mcp/__pycache__/security.cpython-312.pyc
+deleted file mode 100644
+index 39532319c6e942f12e582f10f80c37143a0b95ba..0000000000000000000000000000000000000000
+GIT binary patch
+literal 0
+HcmV?d00001
+
+literal 5931
+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
+D$6B&%
+
+diff --git a/cli-mcp/src/cli_mcp/__pycache__/server.cpython-312.pyc b/cli-mcp/src/cli_mcp/__pycache__/server.cpython-312.pyc
+deleted file mode 100644
+index dfae800e0407f2fa19b7d2e3fe6527a0e6145489..0000000000000000000000000000000000000000
+GIT binary patch
+literal 0
+HcmV?d00001
+
+literal 7652
+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
+VXX&wBD`ITU_s}=y;lhmR{{h?HoJarw
+
+diff --git a/cli-mcp/src/cli_mcp/server.py b/cli-mcp/src/cli_mcp/server.py
+deleted file mode 100644
+index 2bc0e2d..0000000
+--- a/cli-mcp/src/cli_mcp/server.py
++++ /dev/null
+@@ -1,169 +0,0 @@
+-from __future__ import annotations
+-
+-import logging
+-import os
+-from typing import Any
+-
+-from mcp.server.fastmcp import FastMCP
+-
+-from .sandbox import DockerSandbox
+-from .security import SecurityChecker
+-
+-logger = logging.getLogger("cli-mcp.server")
+-
+-
+-def create_server(config: dict[str, Any]) -> FastMCP:
+-    mcp = FastMCP(
+-        "CLI MCP Gateway",
+-        instructions=(
+-            "I can execute CLI commands inside a sandboxed Docker container. "
+-            "I support any tool installed in the container: git, npm, python, aws, gcloud, gh, docker, curl, jq, and more. "
+-            "Use the run_cli tool to execute commands. Use list_tools to discover what's available."
+-        ),
+-    )
+-
+-    sandbox = DockerSandbox(config)
+-    security = SecurityChecker(config)
+-    server_cfg = config.get("server", {})
+-
+-    @mcp.tool()
+-    async def run_cli(
+-        tool: str,
+-        args: str = "",
+-        cwd: str = ".",
+-        timeout: int = 60,
+-    ) -> str:
+-        """Execute any CLI command inside the sandboxed Docker container.
+-
+-        The command runs in an isolated environment with all common dev tools pre-installed.
+-        Output is returned as text. Use list_tools() to see what's available.
+-
+-        Args:
+-            tool: CLI command to run (e.g., git, npm, python3, aws, gh, curl, jq, rg)
+-            args: Space-separated arguments and flags for the command
+-            cwd: Working directory relative to the workspace mount point
+-            timeout: Maximum execution time in seconds (default 60, max 300)
+-        """
+-        try:
+-            tool_cfg = config.get("tools", {})
+-            effective_timeout = min(timeout, config.get("security", {}).get("max_timeout", 300))
+-            default_timeout = tool_cfg.get("command_timeout", 60)
+-            if effective_timeout == 0:
+-                effective_timeout = default_timeout
+-
+-            security.validate(tool, args, effective_timeout)
+-
+-            result = await sandbox.exec(
+-                tool=tool,
+-                args=args,
+-                cwd=cwd,
+-                timeout=effective_timeout,
+-            )
+-
+-            output = ""
+-            if result.stdout:
+-                output += result.stdout
+-            if result.stderr:
+-                if output:
+-                    output += "\n"
+-                output += result.stderr
+-
+-            output = security.truncate_output(output)
+-
+-            if result.exit_code != 0:
+-                output += f"\n\n[Exit code: {result.exit_code}]"
+-
+-            output += f"\n[Duration: {result.duration:.2f}s]"
+-            return output or "(no output)"
+-
+-        except Exception as e:
+-            logger.exception(f"run_cli failed")
+-            return f"Error: {e}"
+-
+-    @mcp.tool()
+-    async def list_tools() -> str:
+-        """List all CLI tools available in the sandboxed container.
+-
+-        Returns a categorized list of available commands installed in the
+-        cli-mcp-tools image, including dev tools, cloud CLIs, and utilities.
+-        """
+-        try:
+-            return await sandbox.list_tools()
+-        except Exception as e:
+-            logger.exception(f"list_tools failed")
+-            return f"Error listing tools: {e}"
+-
+-    @mcp.tool()
+-    async def sandbox_info() -> str:
+-        """Show the current sandbox configuration and container status.
+-
+-        Returns image name, container state, uptime, workspace mount settings,
+-        security mode, and timeout limits.
+-        """
+-        try:
+-            return await sandbox.info()
+-        except Exception as e:
+-            logger.exception(f"sandbox_info failed")
+-            return f"Error getting sandbox info: {e}"
+-
+-    @mcp.tool()
+-    async def reset_sandbox() -> str:
+-        """Reset the sandbox container to a clean state.
+-
+-        Destroys and recreates the Docker container. Use this if the container
+-        becomes corrupted, runs out of space, or you want a fresh environment.
+-        """
+-        try:
+-            return await sandbox.reset()
+-        except Exception as e:
+-            logger.exception(f"reset_sandbox failed")
+-            return f"Error resetting sandbox: {e}"
+-
+-    @mcp.tool()
+-    async def run_script(
+-        language: str,
+-        code: str,
+-        cwd: str = ".",
+-        timeout: int = 60,
+-    ) -> str:
+-        """Execute a short script in the specified language inside the sandbox.
+-
+-        Supported languages: python, node (JavaScript), bash, sh.
+-
+-        Args:
+-            language: Script language (python, node, bash, sh)
+-            code: The script content to execute
+-            cwd: Working directory relative to workspace mount point
+-            timeout: Maximum execution time in seconds
+-        """
+-        lang_map = {
+-            "python": "python3 -c",
+-            "node": "node -e",
+-            "javascript": "node -e",
+-            "bash": "bash -c",
+-            "sh": "sh -c",
+-        }
+-
+-        executor = lang_map.get(language.lower())
+-        if not executor:
+-            return (
+-                f"Unsupported language: {language}. "
+-                f"Supported: {', '.join(lang_map.keys())}"
+-            )
+-
+-        escaped_code = code.replace("'", "'\"'\"'")
+-        full_args = f"'{escaped_code}'"
+-
+-        try:
+-            security.validate(executor.split()[0], full_args, timeout)
+-        except Exception as e:
+-            return f"Security check failed: {e}"
+-
+-        return await run_cli(
+-            tool=executor.split()[0],
+-            args=f"{executor.split()[1]} {full_args}" if " " in executor else full_args,
+-            cwd=cwd,
+-            timeout=timeout,
+-        )
+-
+-    return mcp
+diff --git a/cli-mcp/tests/__pycache__/__init__.cpython-312.pyc b/cli-mcp/tests/__pycache__/__init__.cpython-312.pyc
+deleted file mode 100644
+index 8fee93e3faa17cd8bdabda11c5820863b9c32835..0000000000000000000000000000000000000000
+GIT binary patch
+literal 0
+HcmV?d00001
+
+literal 141
+zcmX@j%ge<81hK0mvOx4>5P=Rpvj9b=GgLBYGWxA#C}INgK7-W!(s8zm2`x@7Dvoh>
+zR&Y#CPAx8uNzTdC%}p+dDM>9ZDUOMc&&<m#iI3MSsJz8tlbfGXnv-f*#0u2R2*kx8
+O#z$sGM#ds$APWHPA0NR0
+
+diff --git a/cli-mcp/tests/__pycache__/test_config.cpython-312-pytest-9.0.3.pyc b/cli-mcp/tests/__pycache__/test_config.cpython-312-pytest-9.0.3.pyc
+deleted file mode 100644
+index e60ceb8b23045a2538e2f127e1a6d11e533039e5..0000000000000000000000000000000000000000
+GIT binary patch
+literal 0
+HcmV?d00001
+
+literal 6769
+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
+CyD^vm
+
+diff --git a/cli-mcp/tests/__pycache__/test_path_utils.cpython-312-pytest-9.0.3.pyc b/cli-mcp/tests/__pycache__/test_path_utils.cpython-312-pytest-9.0.3.pyc
+deleted file mode 100644
+index 67627b76b7380f6f2178038303fdbf466db1c4e0..0000000000000000000000000000000000000000
+GIT binary patch
+literal 0
+HcmV?d00001
+
+literal 3928
+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
+K_yGrmt^6N*a7Oh2
+
+diff --git a/cli-mcp/tests/__pycache__/test_sandbox.cpython-312-pytest-9.0.3.pyc b/cli-mcp/tests/__pycache__/test_sandbox.cpython-312-pytest-9.0.3.pyc
+deleted file mode 100644
+index a4f369758d2688d575c984fc5d5b2c0049bb8a9b..0000000000000000000000000000000000000000
+GIT binary patch
+literal 0
+HcmV?d00001
+
+literal 4001
+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
+YB>jxee%byT(f>%Ek`6s0K*ZEP0q0n2p#T5?
+
+diff --git a/cli-mcp/tests/__pycache__/test_security.cpython-312-pytest-9.0.3.pyc b/cli-mcp/tests/__pycache__/test_security.cpython-312-pytest-9.0.3.pyc
+deleted file mode 100644
+index 49906e580b65da0d424d834aa8bcdf026f5d4bb5..0000000000000000000000000000000000000000
+GIT binary patch
+literal 0
+HcmV?d00001
+
+literal 13560
+zcmeHO-ESP%b)VVU*`56$cljZkk|<^)D<U@(m!u@x5+gdM1j|WXvvq6-5W{%7;vGs$
+z?Jn6nLrGliI7VRvG?Jn+(83JhhjkpFA{3ziL6P{S4}Dp3DU%%-=tH0Mrieuos1NNq
+z_s-Xn!w&<7RTR2fo;ml<{hB-Xp5O1DJNnm_mbd`npYC_fb|wVjKQQ8iu&r!Og7UFI
+z1R@rNNs(PcC22Y&3Z?L*EaII|F;a?7MoY@1Qi@H+L?I-+CJ^ZZfrRgecs-MGmL@}5
+z#7#>qirMHx%rKFatk#Rgx#=6lf^NK8Ht3?2dP|#Lpao;`(sgb6hDNOxC*f5}=jb%A
+zm`l-)Z1sThv7oV@PKJp1fiNkN5Xdn0XHs4aXJxDXZA~|tTbp)jz>1>qC&Ay=uVEBE
+z77X_u5lQH`lGA@vtctVt^I<V3m?082rI1h!Ri*oOSu<P>>z@*tL=4%<Hyd#@?|R=>
+zZwmS$Bj%*fviIb~__ZoJbyI)NWOFWzc{$4>wC~j#lsDwmx=%j$$@a+?cIqS1Pr?;=
+zVpBF!P9J?`(@vUqt;$YW=lVA=|89$B2>v7((cMO0c{cid6su2T^kYGzpA^hUH3BOj
+z{%i%9(F3o5s5A4OtA7Q+DhQjAMIoD*s3d7=O79<_Gav`8umJ{cC1geC^M;|(vK66P
+zUY{#h6k5tarp(}zALeykqekXCee;ViX7%_TTgi;Eq|;6kD0b3NR?n64#`JYfkDGm%
+z{cKjx#!XAs&|a^EEopvn2*qg>XHmR}9m`}`o0-fYi(&h@L8CPP<PEzI<+-n;A1g76
+zM%#+oowSm#%rB}}7YaqAP}Z#opi91}TX9Im;ZgI{>QeRVa|=bHQf;29*NSsj^F_6s
+zFKJdx)$=nNCR?rJY@`ZvWrjOehdMJyp$%2LJzvb1^9I~mQLM186=!HG_8@@`^Jg3O
+zN6z>oBRs<EddYvsj_^C@bOow}A!Omn@TJkIci_e8Q<pAf#;2z>U7wmR76wYw^Hca#
+zI+LnyLuYP&(K^hYRxgz1i<)Xr2$hXd<<#3dfH1dfZp1Bp3h?ZG;mdSSz4xWxMb^`=
+zEy<gy&c8E1H0w&=@+624&E?5Pst>f)RNsc;{T?WNOA9=q;i>DOnmlz4YjD+ib7@G2
+ztZrMUmfx)_r=YEO8>v&Et)@<GDBkaZathnRgodZCg9>e7>Y4&IxN5z*G^9h;&5o{*
+z$37aXD?_y&5Fd@zdKw)=pw&U9P+3h4Z7AOFfiiS=geNpSbsf|(p1OurxhhoSFU|EW
+z7-S)sj2wsA-AqP)>w@(jR746g$6$!VM1IOtME1e|H%mn#-xw8%293T8hRU;d@U??s
+zY@(tN0x(#Z8Cwx4>}!NdD<K((4ifF=pic6%1rnL5rbtCAF}OW2a9u0T(@wl|2nFsW
+znrtsU2`N^J*+)VgOIkU;n+^5yU?22HAeiN>-C0kc@tMtB{n$WV$$<quHqc1rKwVAc
+zHWcsoK*^yo!-R&Xu7e833{%$>ti#iri$gl(b*<Sz?Py&Y0Bd%%(E;ra)Ip|DSxrF|
+z-tU1jfYuBX8lJiiDp)g2T~nYcSA}Z0?w7O=9y-{X)pl&Ho>?;(EWz6{?qeN2YX6k2
+z*)uG8n%i0zOJdKk<ZH*0_(Y}c-O(xiyHkBAvMBD*@4_;zw2by;?_@@+qbD=w_eQrP
+zN-NyWc(*HYZTk9L1`wt=w?D)@#~=pi{|)u(T<NNdG}+ydW=B?ZrszNQsQN4G>2V+8
+z3@oc)?}0q4ja@81;*D+j9ThA;;*D+jmsM8<^zhq!&>^c!)W2bL%hkF8Kmpyl8yyIx
+zb&$JYDx#Z>sg4RbiRflyYOUK<p&G9HB}2D~Y{XJjwrNyVE3T@gIkEs7E!9e@>R&J9
+zi@2RsRoV-$g!ZEt0I?#l!i-W-bT={qkSOSFAU+Tthr;sk<D?|#w&G!VkmtsX!EVnX
+zxU-krlZ3(f86n_)os5zQNM$jaRjdx2QI1#DcC!Y<br(#g=FJBQ5eYXDpM<W71^DN9
+zC`>U19>-bSif;=fLZU>uZ{GpWam)-=L;A$t+Yl0WY9@&a)JT%P{J1yX7OL*1s30=K
+zEE&kZSn!n$+Hkl&O{YclwwR$s;RV6KjXet|1S*Nb6=6}hCES*-2)D#+%Y>ykJ8mm>
+z)p282+I>!$pG*x-P5tx)Mei#`cdiwprHag)F%K_5{PL5`Tg(}ext_nNWoW*jYb4{m
+z9Oim>l8(RZbK4AOb@Z_euP78}j-}kp7Yig04xhsqZFBq-yhusEMvp=|?M8771@7oq
+z!t`5kv7+GDVP1Bh^J2*FqByN%Bj|<TMEE4LQtrd5Ow+kzp-{f2PS2G}`7)`D2Fx+;
+zWZ1WC7c{894+3~|`?oif&uylUZf4H^?#HX0fBr}c^|U{d!iQTQNs$-gTSBBGu@rsO
+z8jiJXCObBg-K)v&<+p1u-MhG+90c-PPhR+FWFvXui{yp+kqe-39acV5T?zUA^ku61
+zu^`6U{w<k)B*FEG-VUAkhw<L=G2!=Pv5PV3b43K%v{cZUk5hZ=!Y)hYS_l`*|L29W
+z%d(e9i+|Y%FQ;FA%Uw>b6LbUy(u(B)E^pz1kR@F!fGE$GvLP!B7FM%b*iDV7#@t*{
+zr!PT)iZW9uYB}S!LC-<-GCdEHj-vP;2rHr+d1FDRxZ3FVL2R4RC)kX38&#R6t8?Yz
+zqN>kp(}kIWMk?oaozMG}#O<U0w;<fv-1Wld@!orfYCV6DC7j1H&SRO)<K(t^JbI6=
+zCr^KcdHhHbV(AT~YgOr5K2%fg9f$qgpZ+r{q>lwm?Y|%Iy_ga{PsJ`Cl|DZrf^3@F
+zXs+1Q{%4RoQQ&~qAFu+>{ygg+J&^TR99v9c%=*WDHvFkr|GOf+Vune=3>gU3EO_TE
+zrd*Y0(OPT^W(3XyBlqo8GYV&e(VK#)RF%7;-s5{FbU<tiBw1BvMACv~W<vMT3`6jh
+z*>fC7tMNQ9AqcZ*QMU!BPjKRR*jML~ZP_4dxMy_EJE8s(0lnB+0!|=XN$S8oI<$9>
+zym5y!Q14tdpeJ5V=s{|qyzaT<KKUZfIP8<pJ;fpEPa=$y#7G-yuf}YK5<f6Qak-Gw
+zvhO@df%704{vu}d3Y^ND;rGIe_Vt$N8rKfnxF$;Z+p1A0X>$w4L-cjg%P9T~MWFSJ
+z+L>2GD^w_F#R|bAAmAXGLYW;I4Z{HuKSn~$J~TS#q=8~51)MgW$?CoXr5sp&jlvld
+z9xh3`K`l|sMz{?JzH^4+`l1~mkp7&r!qAPOO3KfS;M9sGpU$>2ZbZkh2+|_@GKv5q
+zM1O=8%B*eRPH<LKWXD3lW9IWzqqvADt{;j^Bb#8fiN1mf<0vkocnigG6emFV4|UG_
+zBd7V<6hGk^9&U=A(UGnq&$0ujTkQ;-?029R3#EclIk_toHRVGv)xX1cgN#NkAG;T-
+zcl85>Lcj?zz=?!ogC22ur}l$;SJ#unUjcAz;<N?C3HVlbJ(>HBR2%;+0!l6NkI7Gy
+zpnRJAtQ9VI&(~UUN0r3i7d*}*4UBNrm8>TB_HQKj23OXg{&DxVqpoACUWTNnwsLiw
+zg#7=FTyOA+j<e(=;CknU-=B}a)-8Q5y_$OMdFfxCmm$)Gi)e8eF8%<N{cv#?a)hWT
+zd8i1dxe>lX=^Icfoj~EP%xuV;&7dQ3XERX8uTUIf&d>Xt8E~s$TrZUE2{W+ogz;x*
+z6loA@b_h%0yxB=J_VD`t`~U<3KAs5$50<yJGo`9D>l%FMq8%JCGs6aMmRayjzbO+L
+zK0}bJksE#RAxg9w)&I-qWks5^EszL6u1KO-#)Dp>7<huf!mPV7bW#Mt=>>yS?{ga$
+zKE0d<?iyHd3_3unS0aE&>?{F*rjXcyd*uIED4<8)Xf=IS6wnhdC-fk;cdxxqdG^WY
+zLMn;dXLJflAOW(WGG^f63=6)Ro^#T?Yc=MKsB^WU5+O2bMo5bpuZBr0u68p~jaL&u
+z$AG-)MPI!^Ga^-$VMe5}gf}C6Wr9Y^h3$RvC7iyJwogKgC?rWc>8K{{r&kXA^e%07
+zYP6p|jwHcMfSKvEi9i~O0FZ$B1p}-^S<@e)Nvj+~eK?NtG?QnTJj>+BLnNVD@kwZG
+z44A+WG6BGFj{cx{UyLwV2a*6#o*CnxmH_@+Qc)`d)?#znFvV%e;GMpW8X|k8)d%Om
+z9q2odXvGY=P@V=42YL8E5a?e*BDCMWjfvoQDIs1VzKy23pmo+jHp!hPDW^(%46L|5
+zUo04`Yjg%mbJlPLwPp&ijYMQyJbP?K_<+*uSnL{#pP)cy;O7Bn=?iWOCj;j>nfUg$
+z<PjYWj>8DpmD7R_P7CZ|;V-b#yStfh%J?eOsUPtXgZknAdvDge2Ai3I&_1#h+3Y;J
+z(b>P+*?;eHqw~yCY%_g$BYk2ueWH;*xg>v?YQH=3i%MPTS$-45Qf2wg4}Z3yz{d_f
+z4|tSET)C?B{8Hz!hNrr>*OVUg$zpl9?WpTm6;Fi>%Wt~bT?I04rjFE=-es+J@mB><
+zmhLPU>Z#rh1%D5CoJSfM;p!R`C~(y;*OlI#SccY_fxZQ6U_a157?ye42k-O`5X{9l
+zAMVN3a8<qmaF3tU!PfD859ekBwmk%K3qJb9Ql7OUQE$UB8{i0S!Y>y`gOJWZJHUct
+zX8^yv5&`(Kvjm_AxP=egqeH&>1F+W{LBOv)d*bCp1l=dEciQ@YZ|q`U+t|6T^L@w8
+z&B?HT?{Rjw(}3xG`x|AL9(7R-Ej|mrw-De6sqThqVYcm+iDJg8v8n_}j-Olq%2!*^
+z+GweUVQsWx32$xq$^^__k5xSV8B0<&M~IU&X{*NV(M%Wz9Zi>QIBVDD2r&~J2if)j
+zesC4PoP3CH#v=J|AY?^LyZ`|I#=!{21?Gnca5;?F{sjPkAR-*r88jE+QNXp(OhC}9
+zFv3UzV;#+&1#oT9A493#xCgKwhkGEIY2qHx4SEw>Oz>^oEY|atI7ZUr7!>=?2?pa9
+zCooz<QARO^0v!|nGn}*j$cs9fem|!Oq!jF(AB0k{jDG=D>XX|j#gFP;L)$6E(Vdh6
+zNyPbIyjNHH!E<o=vjiwh@6{5kss0TGe_!x8kGOJG=|?7k85*AI-d<Ds!K2{ZcGPvO
+z%FV+S)~=fq{0yv+E1{y=W%stDLPfQNo5xk4C!B{Ih<>=71Br{xLx7z)s(Tw0hmuTW
+zV>E}a829IN2*o87ucLSu#b2SAN3n=v7)2k7lPJzO0y(Xo0fA@ENxAKDcZ-~R+@r{Y
+zk2}MlB^9}Et1~M1@xoXxo3s??vuehPt-~t+raH$-JA4qGquMR_zdP_DwVPx`?KFNo
+znTF4nRrqW<=bW6fuebTaK<2}b#aTa_`)(;0_!;}l^k<L{=9-}6<OlbSDE>P>$cFIx
+bs_^<BBWZE)4+4lkp8USp_gDbI9^!uiJ;DDk
+
+diff --git a/cli-mcp/pyproject.toml b/pyproject.toml
+similarity index 88%
+rename from cli-mcp/pyproject.toml
+rename to pyproject.toml
+index a193c92..fefb97b 100644
+--- a/cli-mcp/pyproject.toml
++++ b/pyproject.toml
+@@ -26,12 +26,13 @@ dependencies = [
+     "mcp[cli]>=1.6.0",
+     "pyyaml>=6.0",
+     "pydantic>=2.0",
++    "uvicorn>=0.23",
+ ]
+ 
+ [project.urls]
+-Homepage = "https://github.com/yourusername/cli-mcp"
+-Repository = "https://github.com/yourusername/cli-mcp"
+-Documentation = "https://github.com/yourusername/cli-mcp#readme"
++Homepage = "https://github.com/kamikaze1120/CLI-MCP"
++Repository = "https://github.com/kamikaze1120/CLI-MCP"
++Documentation = "https://github.com/kamikaze1120/CLI-MCP#readme"
+ 
+ [project.optional-dependencies]
+ dev = [
+diff --git a/cli-mcp/src/cli_mcp/__init__.py b/src/cli_mcp/__init__.py
+similarity index 100%
+rename from cli-mcp/src/cli_mcp/__init__.py
+rename to src/cli_mcp/__init__.py
+diff --git a/cli-mcp/src/cli_mcp/config.py b/src/cli_mcp/config.py
+similarity index 84%
+rename from cli-mcp/src/cli_mcp/config.py
+rename to src/cli_mcp/config.py
+index 424784b..a37b5f6 100644
+--- a/cli-mcp/src/cli_mcp/config.py
++++ b/src/cli_mcp/config.py
+@@ -1,8 +1,10 @@
+ from __future__ import annotations
+ 
++import copy
+ import os
+ from pathlib import Path
+ from typing import Any
++
+ import yaml
+ 
+ DEFAULT_CONFIG: dict[str, Any] = {
+@@ -31,7 +33,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
+         "mode": "blocklist",
+         "blocklist": [
+             {
+-                "pattern": "rm\\s+-rf\\s+[\\/\\\\]$",
++                "pattern": (
++                    "rm\\s+(?:-\\w+\\s+)*-\\w*[rR]\\w*(?:\\s+-\\w+)*"
++                    "\\s+[\\/\\\\](?:[\\/\\\\*]|\\s|$)"
++                ),
++                "reason": "Prevents recursive root deletion",
++            },
++            {
++                "pattern": "--no-preserve-root",
+                 "reason": "Prevents recursive root deletion",
+             },
+             {
+@@ -47,11 +56,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
+                 "reason": "Prevents direct device access",
+             },
+             {
+-                "pattern": "chmod\\s+777\\s+/",
++                "pattern": "chmod\\s+(?:-\\w+\\s+)*777\\s+/(?:\\s|$)",
+                 "reason": "Prevents world-writable root",
+             },
+             {
+-                "pattern": "^:\\s*\\(\\s*\\)\\s*\\{",
++                "pattern": ":\\s*\\(\\s*\\)\\s*\\{.*\\|.*&",
+                 "reason": "Prevents fork bombs",
+             },
+         ],
+@@ -78,6 +87,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
+         "http": {
+             "host": "127.0.0.1",
+             "port": 8080,
++            # Name of the environment variable holding the bearer token for
++            # HTTP mode. The token itself is never stored in config files.
+             "auth_token_env": "CLI_MCP_AUTH_TOKEN",
+         },
+     },
+@@ -86,7 +97,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
+ ENV_OVERRIDES: dict[str, str] = {
+     "CLI_MCP_IMAGE": "sandbox.image",
+     "CLI_MCP_CONTAINER_NAME": "sandbox.container_name",
+-    "CLI_MCP_AUTH_TOKEN": "server.http.auth_token_env",
+     "CLI_MCP_TIMEOUT": "tools.command_timeout",
+     "CLI_MCP_MAX_TIMEOUT": "security.max_timeout",
+     "CLI_MCP_WORKSPACE": "sandbox.workspace.host_path",
+@@ -111,7 +121,7 @@ def _deep_get(d: dict[str, Any], keys: list[str]) -> Any:
+ 
+ 
+ def load_config(path: str | None = None) -> dict[str, Any]:
+-    config = DEFAULT_CONFIG.copy()
++    config = copy.deepcopy(DEFAULT_CONFIG)
+ 
+     if path is None:
+         candidates = [
+@@ -123,13 +133,11 @@ def load_config(path: str | None = None) -> dict[str, Any]:
+     else:
+         candidates = [Path(path)]
+ 
+-    loaded = False
+     for candidate in candidates:
+         if candidate.exists():
+             with open(candidate) as f:
+                 overrides = yaml.safe_load(f) or {}
+             _deep_merge(config, overrides)
+-            loaded = True
+             break
+ 
+     for env_key, config_path in ENV_OVERRIDES.items():
+@@ -142,14 +150,15 @@ def load_config(path: str | None = None) -> dict[str, Any]:
+ 
+ 
+ def _coerce_value(value: str) -> str | int | bool:
+-    if value.lower() in ("true", "yes", "1"):
+-        return True
+-    if value.lower() in ("false", "no", "0"):
+-        return False
+     try:
+         return int(value)
+     except ValueError:
+-        return value
++        pass
++    if value.lower() in ("true", "yes"):
++        return True
++    if value.lower() in ("false", "no"):
++        return False
++    return value
+ 
+ 
+ def _deep_merge(base: dict, overrides: dict) -> None:
+diff --git a/cli-mcp/src/cli_mcp/main.py b/src/cli_mcp/main.py
+similarity index 76%
+rename from cli-mcp/src/cli_mcp/main.py
+rename to src/cli_mcp/main.py
+index 4fa41e7..238c259 100644
+--- a/cli-mcp/src/cli_mcp/main.py
++++ b/src/cli_mcp/main.py
+@@ -1,12 +1,12 @@
+ from __future__ import annotations
+ 
+ import argparse
+-import asyncio
+ import logging
+ import sys
++from pathlib import Path
+ 
+ from .config import load_config
+-from .server import create_server
++from .server import create_server, run_http
+ 
+ logger = logging.getLogger("cli-mcp")
+ 
+@@ -20,14 +20,26 @@ def setup_logging(verbose: bool = False) -> None:
+     )
+ 
+ 
++def find_dockerfile() -> Path | None:
++    candidates = [
++        Path.cwd() / "Dockerfile",
++        Path(__file__).resolve().parents[2] / "Dockerfile",  # repo root (editable install)
++        Path(__file__).resolve().parent / "Dockerfile",  # packaged copy, if any
++    ]
++    for candidate in candidates:
++        if candidate.is_file():
++            return candidate
++    return None
++
++
+ def build_image() -> None:
+     import subprocess
+-    import os
+-    from pathlib import Path
+ 
+-    dockerfile = Path(__file__).parent.parent / "Dockerfile"
+-    if not dockerfile.exists():
+-        print("Error: Dockerfile not found at", dockerfile)
++    dockerfile = find_dockerfile()
++    if dockerfile is None:
++        print("Error: Dockerfile not found.")
++        print("Run this command from a clone of the cli-mcp repository, or pull a")
++        print("pre-built image and set 'sandbox.image' in cli-mcp.yaml instead.")
+         sys.exit(1)
+ 
+     print("Building cli-mcp-tools:latest Docker image...")
+@@ -107,10 +119,8 @@ def main() -> None:
+ 
+     if "http" in transports:
+         http_cfg = config["server"]["http"]
+-        host = http_cfg["host"]
+-        port = http_cfg["port"]
+-        logger.info(f"Starting HTTP server on {host}:{port}...")
+-        mcp.run(transport="http", host=host, port=port)
++        logger.info(f"Starting HTTP server on {http_cfg['host']}:{http_cfg['port']}...")
++        run_http(mcp, config)
+     else:
+         logger.info("Starting stdio server...")
+         mcp.run(transport="stdio")
+diff --git a/cli-mcp/src/cli_mcp/path_utils.py b/src/cli_mcp/path_utils.py
+similarity index 67%
+rename from cli-mcp/src/cli_mcp/path_utils.py
+rename to src/cli_mcp/path_utils.py
+index c6fc954..821639b 100644
+--- a/cli-mcp/src/cli_mcp/path_utils.py
++++ b/src/cli_mcp/path_utils.py
+@@ -5,6 +5,8 @@ import platform
+ import re
+ from pathlib import Path
+ 
++_WINDOWS_DRIVE_RE = re.compile(r"^([A-Za-z]):[\\/](.*)")
++
+ 
+ def is_windows() -> bool:
+     return platform.system() == "Windows"
+@@ -22,7 +24,7 @@ def to_container_path(
+     if not path.is_absolute():
+         return os.path.join(container_workspace, host_path)
+ 
+-    match = re.match(r"^([A-Za-z]):\\(.*)", str(path))
++    match = _WINDOWS_DRIVE_RE.match(str(path))
+     if match:
+         drive = match.group(1).lower()
+         rest = match.group(2).replace("\\", "/")
+@@ -43,7 +45,12 @@ def to_container_path(
+ 
+ 
+ def normalize_path(path: str) -> str:
+-    if is_windows() and "\\" in path:
++    """Convert backslash separators to forward slashes in Windows-style paths.
++
++    Applies on any platform when the path is clearly Windows-style (drive
++    letter prefix), and to any backslash path when running on Windows.
++    """
++    if "\\" in path and (is_windows() or _WINDOWS_DRIVE_RE.match(path)):
+         return path.replace("\\", "/")
+     return path
+ 
+@@ -64,7 +71,13 @@ def resolve_workspace(
+     return host_root, working_dir
+ 
+ 
+-def docker_mount_flag(host_path: str, container_path: str, read_only: bool = False) -> str:
++def docker_mount_args(host_path: str, container_path: str, read_only: bool = False) -> list[str]:
++    """Build 'docker run' volume arguments as an argv list (safe for paths with spaces)."""
+     host = normalize_path(str(Path(host_path).resolve()))
+     ro_flag = ":ro" if read_only else ""
+-    return f"-v {host}:{container_path}{ro_flag}"
++    return ["-v", f"{host}:{container_path}{ro_flag}"]
++
++
++def docker_mount_flag(host_path: str, container_path: str, read_only: bool = False) -> str:
++    """String form of docker_mount_args, for display purposes only."""
++    return " ".join(docker_mount_args(host_path, container_path, read_only))
+diff --git a/cli-mcp/src/cli_mcp/sandbox.py b/src/cli_mcp/sandbox.py
+similarity index 76%
+rename from cli-mcp/src/cli_mcp/sandbox.py
+rename to src/cli_mcp/sandbox.py
+index d05c59f..474ea55 100644
+--- a/cli-mcp/src/cli_mcp/sandbox.py
++++ b/src/cli_mcp/sandbox.py
+@@ -3,17 +3,14 @@ from __future__ import annotations
+ import asyncio
+ import logging
+ import os
+-import platform
+-import shlex
+ import shutil
+ import subprocess
+-import sys
+ import time
+-from dataclasses import dataclass, field
++from dataclasses import dataclass
+ from pathlib import Path
+ from typing import Any
+ 
+-from .path_utils import docker_mount_flag, is_windows, normalize_path, resolve_workspace
++from .path_utils import docker_mount_args, is_windows
+ 
+ logger = logging.getLogger("cli-mcp.sandbox")
+ 
+@@ -30,6 +27,21 @@ class ExecResult:
+     duration: float
+ 
+ 
++async def _communicate_with_timeout(
++    proc: asyncio.subprocess.Process, timeout: int
++) -> tuple[bytes, bytes]:
++    """Wait for a process to finish, killing it if the timeout elapses."""
++    try:
++        return await asyncio.wait_for(proc.communicate(), timeout=timeout)
++    except asyncio.TimeoutError:
++        proc.kill()
++        try:
++            await asyncio.wait_for(proc.communicate(), timeout=5)
++        except asyncio.TimeoutError:
++            pass
++        raise
++
++
+ class DockerSandbox:
+     def __init__(self, config: dict[str, Any]) -> None:
+         self.config = config
+@@ -44,60 +56,45 @@ class DockerSandbox:
+         self._container_id: str | None = None
+ 
+     def _docker_cmd(self) -> str:
+-        docker = shutil.which("docker") or "docker"
+-        return docker
++        return shutil.which("docker") or "docker"
+ 
+     async def _run_docker(
+-        self, args: list[str], timeout: int = 30, capture: bool = True
++        self, args: list[str], timeout: int = 30
+     ) -> subprocess.CompletedProcess:
+         cmd = [self._docker_cmd()] + args
+         logger.debug(f"Running docker: {' '.join(cmd)}")
+ 
++        proc = await asyncio.create_subprocess_exec(
++            *cmd,
++            stdout=asyncio.subprocess.PIPE,
++            stderr=asyncio.subprocess.PIPE,
++        )
+         try:
+-            if capture:
+-                proc = await asyncio.wait_for(
+-                    asyncio.create_subprocess_exec(
+-                        *cmd,
+-                        stdout=asyncio.subprocess.PIPE,
+-                        stderr=asyncio.subprocess.PIPE,
+-                    ),
+-                    timeout=timeout,
+-                )
+-                stdout, stderr = await proc.communicate()
+-                return subprocess.CompletedProcess(
+-                    args=cmd,
+-                    returncode=proc.returncode or 0,
+-                    stdout=stdout.decode("utf-8", errors="replace"),
+-                    stderr=stderr.decode("utf-8", errors="replace"),
+-                )
+-            else:
+-                proc = await asyncio.wait_for(
+-                    asyncio.create_subprocess_exec(*cmd),
+-                    timeout=timeout,
+-                )
+-                await proc.wait()
+-                return subprocess.CompletedProcess(
+-                    args=cmd, returncode=proc.returncode or 0
+-                )
++            stdout, stderr = await _communicate_with_timeout(proc, timeout)
+         except asyncio.TimeoutError:
+             raise SandboxError(f"Docker command timed out after {timeout}s: {' '.join(cmd)}")
+ 
++        return subprocess.CompletedProcess(
++            args=cmd,
++            returncode=proc.returncode or 0,
++            stdout=stdout.decode("utf-8", errors="replace"),
++            stderr=stderr.decode("utf-8", errors="replace"),
++        )
++
+     def _build_volume_flags(self) -> list[str]:
+-        flags = []
++        flags: list[str] = []
+         for mount in self.volume_mounts:
+             host = mount.get("host_path", "")
+             container = mount.get("container_path", "")
+             ro = mount.get("read_only", False)
+             if host and container:
+-                flag = docker_mount_flag(host, container, ro)
+-                flags.extend(shlex.split(flag))
++                flags.extend(docker_mount_args(host, container, ro))
+ 
+         if self.workspace_cfg.get("mount", True):
+             host_ws = self.workspace_cfg.get("host_path", "") or str(Path.cwd())
+             container_ws = self.workspace_cfg.get("container_path", "/workspace")
+             ro = self.workspace_cfg.get("read_only", False)
+-            flag = docker_mount_flag(host_ws, container_ws, ro)
+-            flags.extend(shlex.split(flag))
++            flags.extend(docker_mount_args(host_ws, container_ws, ro))
+ 
+         return flags
+ 
+@@ -109,7 +106,7 @@ class DockerSandbox:
+         if result.returncode != 0:
+             logger.info(f"Image '{self.image}' not found. Attempting to pull...")
+             result = await self._run_docker(
+-                ["pull", self.image], timeout=300
++                ["pull", self.image], timeout=600
+             )
+             if result.returncode != 0:
+                 raise SandboxError(
+@@ -154,8 +151,7 @@ class DockerSandbox:
+             "--name", self.container_name,
+         ]
+ 
+-        volume_flags = self._build_volume_flags()
+-        run_args.extend(volume_flags)
++        run_args.extend(self._build_volume_flags())
+ 
+         tools_cfg = self.config.get("tools", {})
+         env_vars = tools_cfg.get("env", {})
+@@ -224,7 +220,7 @@ class DockerSandbox:
+         if is_windows():
+             workdir = workdir.replace("\\", "/")
+ 
+-        exec_cmd = ["docker", "exec", "-i"]
++        exec_cmd = [self._docker_cmd(), "exec", "-i"]
+         exec_cmd.extend(["-w", workdir])
+         exec_cmd.append(self.container_name)
+ 
+@@ -238,33 +234,28 @@ class DockerSandbox:
+ 
+         start = time.monotonic()
+ 
++        proc = await asyncio.create_subprocess_exec(
++            *exec_cmd,
++            stdout=asyncio.subprocess.PIPE,
++            stderr=asyncio.subprocess.PIPE,
++        )
+         try:
+-            proc = await asyncio.wait_for(
+-                asyncio.create_subprocess_exec(
+-                    *exec_cmd,
+-                    stdout=asyncio.subprocess.PIPE,
+-                    stderr=asyncio.subprocess.PIPE,
+-                ),
+-                timeout=timeout,
+-            )
+-            stdout, stderr = await proc.communicate()
+-            duration = time.monotonic() - start
+-
+-            return ExecResult(
+-                stdout=stdout.decode("utf-8", errors="replace"),
+-                stderr=stderr.decode("utf-8", errors="replace"),
+-                exit_code=proc.returncode or 0,
+-                duration=duration,
+-            )
++            stdout, stderr = await _communicate_with_timeout(proc, timeout)
+         except asyncio.TimeoutError:
+-            duration = time.monotonic() - start
+             return ExecResult(
+                 stdout="",
+                 stderr=f"Command timed out after {timeout}s",
+                 exit_code=-1,
+-                duration=duration,
++                duration=time.monotonic() - start,
+             )
+ 
++        return ExecResult(
++            stdout=stdout.decode("utf-8", errors="replace"),
++            stderr=stderr.decode("utf-8", errors="replace"),
++            exit_code=proc.returncode or 0,
++            duration=time.monotonic() - start,
++        )
++
+     async def list_tools(self) -> str:
+         if not self._container_id:
+             if self.auto_start:
+@@ -272,7 +263,12 @@ class DockerSandbox:
+             else:
+                 return "Sandbox not started."
+ 
+-        result = await self.exec("which", "-- ls git node python3 aws gcloud gh docker jq rg curl wget make gcc ssh tar zip unzip vim tmux", timeout=10)
++        result = await self.exec(
++            "which",
++            "-- ls git node npm python3 aws gcloud gh docker jq yq rg fdfind curl wget "
++            "make gcc go rustc java ssh tar zip unzip vim tmux",
++            timeout=10,
++        )
+ 
+         found = []
+         for line in result.stdout.splitlines():
+@@ -289,8 +285,8 @@ class DockerSandbox:
+ 
+     async def info(self) -> str:
+         lines = []
+-        lines.append(f"Sandbox Status:")
+-        lines.append(f"  Type: Docker")
++        lines.append("Sandbox Status:")
++        lines.append("  Type: Docker")
+         lines.append(f"  Image: {self.image}")
+ 
+         if self._container_id:
+@@ -318,7 +314,7 @@ class DockerSandbox:
+             if started:
+                 lines.append(f"  Started: {started}")
+         else:
+-            lines.append(f"  Container: not running")
++            lines.append("  Container: not running")
+ 
+         ws = self.workspace_cfg
+         lines.append(f"  Workspace mount: {ws.get('mount', False)}")
+diff --git a/cli-mcp/src/cli_mcp/security.py b/src/cli_mcp/security.py
+similarity index 76%
+rename from cli-mcp/src/cli_mcp/security.py
+rename to src/cli_mcp/security.py
+index 9c36ad0..93b0f87 100644
+--- a/cli-mcp/src/cli_mcp/security.py
++++ b/src/cli_mcp/security.py
+@@ -9,6 +9,11 @@ class SecurityError(Exception):
+     pass
+ 
+ 
++# Shell constructs that would let a command chain into other commands
++# (defeating allowlist mode, since commands run through 'bash -c').
++_SHELL_CHAINING_RE = re.compile(r"[;&|`\n]|\$\(|<\(|>\(")
++
++
+ @dataclass
+ class BlocklistEntry:
+     pattern: str
+@@ -64,15 +69,21 @@ class SecurityChecker:
+                     f"Tool '{tool}' is not in the allowed list. "
+                     f"Allowed: {', '.join(self.config.allowed_tools)}"
+                 )
++            if _SHELL_CHAINING_RE.search(args):
++                raise SecurityError(
++                    "Shell chaining characters (;, &, |, `, $(, <(, >() are not "
++                    "permitted in allowlist mode, as they could invoke tools "
++                    "outside the allowed list."
++                )
+ 
+-        if self.config.mode == "blocklist":
+-            for entry in self.config.blocklist:
+-                if entry.matches(command):
+-                    raise SecurityError(
+-                        f"Command blocked by security policy: {entry.reason or 'Pattern matched'}\n"
+-                        f"  Pattern: {entry.pattern}\n"
+-                        f"  Command: {command}"
+-                    )
++        # The blocklist applies in every mode.
++        for entry in self.config.blocklist:
++            if entry.matches(command):
++                raise SecurityError(
++                    f"Command blocked by security policy: {entry.reason or 'Pattern matched'}\n"
++                    f"  Pattern: {entry.pattern}\n"
++                    f"  Command: {command}"
++                )
+ 
+         if timeout > self.config.max_timeout:
+             raise SecurityError(
+diff --git a/src/cli_mcp/server.py b/src/cli_mcp/server.py
+new file mode 100644
+index 0000000..683126d
+--- /dev/null
++++ b/src/cli_mcp/server.py
+@@ -0,0 +1,240 @@
++from __future__ import annotations
++
++import logging
++import os
++from typing import Any
++
++from mcp.server.fastmcp import FastMCP
++
++from .sandbox import DockerSandbox
++from .security import SecurityChecker
++
++logger = logging.getLogger("cli-mcp.server")
++
++
++class BearerAuthMiddleware:
++    """ASGI middleware that requires 'Authorization: Bearer <token>' on every request."""
++
++    def __init__(self, app: Any, token: str) -> None:
++        self.app = app
++        self.token = token
++
++    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
++        if scope["type"] != "http":
++            await self.app(scope, receive, send)
++            return
++
++        headers = dict(scope.get("headers", []))
++        auth = headers.get(b"authorization", b"").decode("latin-1")
++
++        if auth != f"Bearer {self.token}":
++            await send(
++                {
++                    "type": "http.response.start",
++                    "status": 401,
++                    "headers": [
++                        (b"content-type", b"application/json"),
++                        (b"www-authenticate", b"Bearer"),
++                    ],
++                }
++            )
++            await send(
++                {
++                    "type": "http.response.body",
++                    "body": b'{"error": "unauthorized"}',
++                }
++            )
++            return
++
++        await self.app(scope, receive, send)
++
++
++def create_server(config: dict[str, Any]) -> FastMCP:
++    http_cfg = config.get("server", {}).get("http", {})
++
++    mcp = FastMCP(
++        "CLI MCP Gateway",
++        instructions=(
++            "I can execute CLI commands inside a sandboxed Docker container. "
++            "I support any tool installed in the container: git, npm, python, aws, "
++            "gcloud, gh, docker, curl, jq, and more. "
++            "Use the run_cli tool to execute commands. "
++            "Use list_tools to discover what's available."
++        ),
++        host=http_cfg.get("host", "127.0.0.1"),
++        port=http_cfg.get("port", 8080),
++    )
++
++    sandbox = DockerSandbox(config)
++    security = SecurityChecker(config)
++
++    def effective_timeout(timeout: int) -> int:
++        default_timeout = config.get("tools", {}).get("command_timeout", 60)
++        max_timeout = config.get("security", {}).get("max_timeout", 300)
++        if timeout <= 0:
++            timeout = default_timeout
++        return min(timeout, max_timeout)
++
++    async def execute(tool: str, args: str, cwd: str, timeout: int) -> str:
++        capped_timeout = effective_timeout(timeout)
++
++        security.validate(tool, args, capped_timeout)
++
++        result = await sandbox.exec(
++            tool=tool,
++            args=args,
++            cwd=cwd,
++            timeout=capped_timeout,
++        )
++
++        output = ""
++        if result.stdout:
++            output += result.stdout
++        if result.stderr:
++            if output:
++                output += "\n"
++            output += result.stderr
++
++        output = security.truncate_output(output)
++
++        if result.exit_code != 0:
++            output += f"\n\n[Exit code: {result.exit_code}]"
++
++        output += f"\n[Duration: {result.duration:.2f}s]"
++        return output or "(no output)"
++
++    @mcp.tool()
++    async def run_cli(
++        tool: str,
++        args: str = "",
++        cwd: str = ".",
++        timeout: int = 60,
++    ) -> str:
++        """Execute any CLI command inside the sandboxed Docker container.
++
++        The command runs in an isolated environment with all common dev tools pre-installed.
++        Output is returned as text. Use list_tools() to see what's available.
++
++        Args:
++            tool: CLI command to run (e.g., git, npm, python3, aws, gh, curl, jq, rg)
++            args: Space-separated arguments and flags for the command
++            cwd: Working directory relative to the workspace mount point
++            timeout: Maximum execution time in seconds (default 60, max 300)
++        """
++        try:
++            return await execute(tool, args, cwd, timeout)
++        except Exception as e:
++            logger.exception("run_cli failed")
++            return f"Error: {e}"
++
++    @mcp.tool()
++    async def list_tools() -> str:
++        """List all CLI tools available in the sandboxed container.
++
++        Returns a categorized list of available commands installed in the
++        cli-mcp-tools image, including dev tools, cloud CLIs, and utilities.
++        """
++        try:
++            return await sandbox.list_tools()
++        except Exception as e:
++            logger.exception("list_tools failed")
++            return f"Error listing tools: {e}"
++
++    @mcp.tool()
++    async def sandbox_info() -> str:
++        """Show the current sandbox configuration and container status.
++
++        Returns image name, container state, uptime, workspace mount settings,
++        security mode, and timeout limits.
++        """
++        try:
++            return await sandbox.info()
++        except Exception as e:
++            logger.exception("sandbox_info failed")
++            return f"Error getting sandbox info: {e}"
++
++    @mcp.tool()
++    async def reset_sandbox() -> str:
++        """Reset the sandbox container to a clean state.
++
++        Destroys and recreates the Docker container. Use this if the container
++        becomes corrupted, runs out of space, or you want a fresh environment.
++        """
++        try:
++            return await sandbox.reset()
++        except Exception as e:
++            logger.exception("reset_sandbox failed")
++            return f"Error resetting sandbox: {e}"
++
++    @mcp.tool()
++    async def run_script(
++        language: str,
++        code: str,
++        cwd: str = ".",
++        timeout: int = 60,
++    ) -> str:
++        """Execute a short script in the specified language inside the sandbox.
++
++        Supported languages: python, node (JavaScript), bash, sh.
++
++        Args:
++            language: Script language (python, node, bash, sh)
++            code: The script content to execute
++            cwd: Working directory relative to workspace mount point
++            timeout: Maximum execution time in seconds
++        """
++        lang_map = {
++            "python": ("python3", "-c"),
++            "node": ("node", "-e"),
++            "javascript": ("node", "-e"),
++            "bash": ("bash", "-c"),
++            "sh": ("sh", "-c"),
++        }
++
++        entry = lang_map.get(language.lower())
++        if not entry:
++            return (
++                f"Unsupported language: {language}. "
++                f"Supported: {', '.join(lang_map.keys())}"
++            )
++
++        interpreter, flag = entry
++        escaped_code = code.replace("'", "'\"'\"'")
++
++        try:
++            return await execute(
++                tool=interpreter,
++                args=f"{flag} '{escaped_code}'",
++                cwd=cwd,
++                timeout=timeout,
++            )
++        except Exception as e:
++            logger.exception("run_script failed")
++            return f"Error: {e}"
++
++    return mcp
++
++
++def run_http(mcp: FastMCP, config: dict[str, Any]) -> None:
++    """Serve the MCP server over streamable HTTP, with optional bearer-token auth."""
++    import uvicorn
++
++    http_cfg = config.get("server", {}).get("http", {})
++    host = http_cfg.get("host", "127.0.0.1")
++    port = http_cfg.get("port", 8080)
++
++    app: Any = mcp.streamable_http_app()
++
++    token_env = http_cfg.get("auth_token_env", "CLI_MCP_AUTH_TOKEN")
++    token = os.environ.get(token_env, "")
++
++    if token:
++        app = BearerAuthMiddleware(app, token)
++        logger.info(f"Bearer-token authentication enabled (token from ${token_env}).")
++    else:
++        logger.warning(
++            f"No auth token set (${token_env} is empty) — the HTTP endpoint is UNAUTHENTICATED. "
++            "Anyone who can reach it can run commands in the sandbox."
++        )
++
++    uvicorn.run(app, host=host, port=port, log_level="info")
+diff --git a/cli-mcp/tests/__init__.py b/tests/__init__.py
+similarity index 100%
+rename from cli-mcp/tests/__init__.py
+rename to tests/__init__.py
+diff --git a/cli-mcp/tests/test_config.py b/tests/test_config.py
+similarity index 74%
+rename from cli-mcp/tests/test_config.py
+rename to tests/test_config.py
+index f51fc9a..8ec51f6 100644
+--- a/cli-mcp/tests/test_config.py
++++ b/tests/test_config.py
+@@ -1,10 +1,9 @@
+ import os
+ import tempfile
+-from pathlib import Path
+ 
+ import yaml
+ 
+-from cli_mcp.config import load_config, DEFAULT_CONFIG, _deep_merge
++from cli_mcp.config import DEFAULT_CONFIG, _deep_merge, load_config
+ 
+ 
+ class TestConfigLoading:
+@@ -52,3 +51,14 @@ class TestConfigLoading:
+ 
+         os.unlink(f.name)
+         assert config["sandbox"]["type"] == "docker"
++
++
++class TestDefaultsIsolation:
++    def test_load_config_does_not_mutate_defaults(self):
++        original_image = DEFAULT_CONFIG["sandbox"]["image"]
++        config = load_config("/nonexistent/cli-mcp.yaml")
++        config["sandbox"]["image"] = "mutated:latest"
++        config["security"]["blocklist"].clear()
++
++        assert DEFAULT_CONFIG["sandbox"]["image"] == original_image
++        assert len(DEFAULT_CONFIG["security"]["blocklist"]) > 0
+diff --git a/cli-mcp/tests/test_path_utils.py b/tests/test_path_utils.py
+similarity index 86%
+rename from cli-mcp/tests/test_path_utils.py
+rename to tests/test_path_utils.py
+index 7d7c8d5..a46b7d5 100644
+--- a/cli-mcp/tests/test_path_utils.py
++++ b/tests/test_path_utils.py
+@@ -1,14 +1,8 @@
+-import os
+-import sys
+-from pathlib import Path
+ 
+-import pytest
+ 
+ from cli_mcp.path_utils import (
+-    is_windows,
+-    to_container_path,
+-    normalize_path,
+     docker_mount_flag,
++    normalize_path,
+ )
+ 
+ 
+diff --git a/cli-mcp/tests/test_sandbox.py b/tests/test_sandbox.py
+similarity index 99%
+rename from cli-mcp/tests/test_sandbox.py
+rename to tests/test_sandbox.py
+index 0eb1bc0..1aa3818 100644
+--- a/cli-mcp/tests/test_sandbox.py
++++ b/tests/test_sandbox.py
+@@ -1,4 +1,3 @@
+-import pytest
+ 
+ from cli_mcp.sandbox import DockerSandbox
+ 
+diff --git a/tests/test_sandbox_timeout.py b/tests/test_sandbox_timeout.py
+new file mode 100644
+index 0000000..7fa99aa
+--- /dev/null
++++ b/tests/test_sandbox_timeout.py
+@@ -0,0 +1,39 @@
++import asyncio
++import sys
++import time
++
++from cli_mcp.sandbox import _communicate_with_timeout
++
++
++class TestTimeoutEnforcement:
++    def test_long_running_process_is_killed(self):
++        async def run():
++            proc = await asyncio.create_subprocess_exec(
++                sys.executable, "-c", "import time; time.sleep(30)",
++                stdout=asyncio.subprocess.PIPE,
++                stderr=asyncio.subprocess.PIPE,
++            )
++            try:
++                await _communicate_with_timeout(proc, timeout=1)
++            except asyncio.TimeoutError:
++                return proc
++            raise AssertionError("expected TimeoutError")
++
++        start = time.monotonic()
++        proc = asyncio.run(run())
++        elapsed = time.monotonic() - start
++
++        assert elapsed < 10, f"process was not killed promptly (took {elapsed:.1f}s)"
++        assert proc.returncode is not None, "process is still running"
++
++    def test_fast_process_completes(self):
++        async def run():
++            proc = await asyncio.create_subprocess_exec(
++                sys.executable, "-c", "print('ok')",
++                stdout=asyncio.subprocess.PIPE,
++                stderr=asyncio.subprocess.PIPE,
++            )
++            return await _communicate_with_timeout(proc, timeout=10)
++
++        stdout, _ = asyncio.run(run())
++        assert stdout.strip() == b"ok"
+diff --git a/cli-mcp/tests/test_security.py b/tests/test_security.py
+similarity index 55%
+rename from cli-mcp/tests/test_security.py
+rename to tests/test_security.py
+index 423f6ef..e49a66d 100644
+--- a/cli-mcp/tests/test_security.py
++++ b/tests/test_security.py
+@@ -84,3 +84,73 @@ class TestSecurityChecker:
+         truncated = checker.truncate_output(output)
+         assert len(truncated) < len(output)
+         assert "truncated" in truncated
++
++
++class TestDefaultBlocklist:
++    def _default_checker(self):
++        from cli_mcp.config import DEFAULT_CONFIG
++
++        return SecurityChecker(DEFAULT_CONFIG)
++
++    def test_rm_rf_root_blocked(self):
++        checker = self._default_checker()
++        for args in ["-rf /", "-rf / --no-preserve-root", "-fr /", "-r -f /", "-rf //"]:
++            try:
++                checker.validate("rm", args, 60)
++                assert False, f"'rm {args}' should have been blocked"
++            except SecurityError:
++                pass
++
++    def test_rm_rf_subdir_allowed(self):
++        checker = self._default_checker()
++        checker.validate("rm", "-rf ./tmp", 60)
++        checker.validate("rm", "-rf node_modules", 60)
++
++    def test_fork_bomb_blocked_mid_command(self):
++        checker = self._default_checker()
++        try:
++            checker.validate("bash", "-c 'cd /tmp && :(){ :|:& };:'", 60)
++            assert False, "fork bomb should have been blocked"
++        except SecurityError:
++            pass
++
++
++class TestAllowlistHardening:
++    def _checker(self):
++        return SecurityChecker({
++            "security": {
++                "mode": "allowlist",
++                "allowed_tools": ["git", "npm"],
++                "blocklist": [
++                    {"pattern": "--no-preserve-root", "reason": "test"},
++                ],
++            }
++        })
++
++    def test_shell_chaining_rejected(self):
++        checker = self._checker()
++        chained = [
++            "status; rm -rf /workspace",
++            "status && curl evil.sh",
++            "log | sh",
++            "log `whoami`",
++            "log $(whoami)",
++        ]
++        for args in chained:
++            try:
++                checker.validate("git", args, 60)
++                assert False, f"'git {args}' should have been rejected"
++            except SecurityError:
++                pass
++
++    def test_plain_args_allowed(self):
++        checker = self._checker()
++        checker.validate("git", "log --oneline -10", 60)
++
++    def test_blocklist_applies_in_allowlist_mode(self):
++        checker = self._checker()
++        try:
++            checker.validate("git", "clean --no-preserve-root", 60)
++            assert False, "blocklist should apply in allowlist mode"
++        except SecurityError:
++            pass
+diff --git a/tests/test_server.py b/tests/test_server.py
+new file mode 100644
+index 0000000..957cdaa
+--- /dev/null
++++ b/tests/test_server.py
+@@ -0,0 +1,77 @@
++import asyncio
++
++from cli_mcp.server import BearerAuthMiddleware, create_server
++
++
++class RecordingApp:
++    def __init__(self):
++        self.called = False
++
++    async def __call__(self, scope, receive, send):
++        self.called = True
++
++
++def _http_scope(headers):
++    return {"type": "http", "headers": headers}
++
++
++async def _noop_receive():
++    return {"type": "http.request"}
++
++
++class TestBearerAuthMiddleware:
++    def test_rejects_missing_token(self):
++        inner = RecordingApp()
++        middleware = BearerAuthMiddleware(inner, "secret")
++        sent = []
++
++        async def send(message):
++            sent.append(message)
++
++        asyncio.run(middleware(_http_scope([]), _noop_receive, send))
++        assert not inner.called
++        assert sent[0]["status"] == 401
++
++    def test_rejects_wrong_token(self):
++        inner = RecordingApp()
++        middleware = BearerAuthMiddleware(inner, "secret")
++        sent = []
++
++        async def send(message):
++            sent.append(message)
++
++        scope = _http_scope([(b"authorization", b"Bearer wrong")])
++        asyncio.run(middleware(scope, _noop_receive, send))
++        assert not inner.called
++        assert sent[0]["status"] == 401
++
++    def test_accepts_correct_token(self):
++        inner = RecordingApp()
++        middleware = BearerAuthMiddleware(inner, "secret")
++
++        async def send(message):
++            raise AssertionError("should not send a response itself")
++
++        scope = _http_scope([(b"authorization", b"Bearer secret")])
++        asyncio.run(middleware(scope, _noop_receive, send))
++        assert inner.called
++
++    def test_passes_through_non_http(self):
++        inner = RecordingApp()
++        middleware = BearerAuthMiddleware(inner, "secret")
++
++        async def send(message):
++            raise AssertionError("should not send a response itself")
++
++        asyncio.run(middleware({"type": "lifespan"}, _noop_receive, send))
++        assert inner.called
++
++
++class TestCreateServer:
++    def test_registers_expected_tools(self):
++        from cli_mcp.config import load_config
++
++        mcp = create_server(load_config("/nonexistent/cli-mcp.yaml"))
++        tools = asyncio.run(mcp.list_tools())
++        names = {t.name for t in tools}
++        assert names == {"run_cli", "list_tools", "sandbox_info", "reset_sandbox", "run_script"}
+-- 
+2.43.0
+
