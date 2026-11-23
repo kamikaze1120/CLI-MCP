@@ -53,7 +53,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
                 "reason": "Prevents filesystem formatting",
             },
             {
-                "pattern": ">\\s*/dev/",
+                # Writes to device files; 2>/dev/null, >/dev/stderr etc. stay allowed
+                "pattern": ">\\s*/dev/(?!(?:null|stdout|stderr)\\b)",
                 "reason": "Prevents direct device access",
             },
             {

@@ -1,0 +1,48 @@
+name: Record demo GIF
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ['Publish tools image']
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: demo
+  cancel-in-progress: true
+
+jobs:
+  record:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 20   # so the demo's `git log` shows real history
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install cli-mcp from this checkout
+        run: pip install -e .
+
+      - name: Record with VHS
+        uses: charmbracelet/vhs-action@v2
+        with:
+          path: demo/demo.tape
+
+      - name: Commit demo GIF if it changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/demo.gif
+          if ! git diff --cached --quiet; then
+            git commit -m "docs: refresh demo GIF [skip ci]"
+            git pull --rebase
+            git push
+          fi

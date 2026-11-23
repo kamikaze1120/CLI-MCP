@@ -154,3 +154,30 @@ class TestAllowlistHardening:
             assert False, "blocklist should apply in allowlist mode"
         except SecurityError:
             pass
+
+
+class TestDefaultDeviceRule:
+    """The default '> /dev/' rule must block writes to real devices but not the
+    ubiquitous harmless redirects (2>/dev/null, >/dev/stderr, ...)."""
+
+    def _checker(self):
+        from cli_mcp.config import DEFAULT_CONFIG
+        return SecurityChecker(DEFAULT_CONFIG)
+
+    def _blocked(self, tool, args):
+        try:
+            self._checker().validate(tool, args, 60)
+        except SecurityError:
+            return True
+        return False
+
+    def test_blocks_writes_to_block_devices(self):
+        assert self._blocked("bash", "-c 'echo x > /dev/sda'")
+        assert self._blocked("bash", "-c 'cat img >/dev/nvme0n1'")
+        assert self._blocked("bash", "-c 'echo x >> /dev/mem'")
+
+    def test_allows_harmless_redirects(self):
+        assert not self._blocked("bash", "-c 'kubectl version 2>/dev/null'")
+        assert not self._blocked("bash", "-c 'make > /dev/null 2>&1'")
+        assert not self._blocked("bash", "-c 'echo oops >/dev/stderr'")
+        assert not self._blocked("bash", "-c 'echo hi > /dev/stdout'")

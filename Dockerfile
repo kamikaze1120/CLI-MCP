@@ -132,5 +132,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN apt-get autoremove -y && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /root/.cache/pip
 
+# The workspace is a bind mount owned by the host user, but commands run as
+# root, so git would refuse it ("detected dubious ownership"). This image is a
+# single-purpose sandbox, so trust mounted repositories.
+RUN git config --system --add safe.directory '*'
+
 WORKDIR /workspace
 CMD ["sleep", "infinity"]

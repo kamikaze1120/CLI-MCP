@@ -36,7 +36,7 @@ security:
       reason: "Prevents raw disk writes"
     - pattern: "mkfs\\..*"
       reason: "Prevents filesystem formatting"
-    - pattern: ">\\s*/dev/"
+    - pattern: ">\\s*/dev/(?!(?:null|stdout|stderr)\\b)"   # 2>/dev/null stays allowed
       reason: "Prevents direct device access"
     - pattern: "chmod\\s+(?:-\\w+\\s+)*777\\s+/(?:\\s|$)"
       reason: "Prevents world-writable root"

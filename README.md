@@ -284,7 +284,7 @@ The following patterns are blocked by default:
 | `rm -rf /` (any flag order, incl. `--no-preserve-root`) | Prevents recursive root deletion |
 | `dd if=` | Prevents raw disk writes |
 | `mkfs.*` | Prevents filesystem formatting |
-| `> /dev/` | Prevents direct device access |
+| `> /dev/…` (except `/dev/null`, `/dev/stdout`, `/dev/stderr`) | Prevents direct device access |
 | `chmod 777 /` | Prevents world-writable root |
 | Fork bombs (anywhere in the command) | Prevents denial-of-service |
 
