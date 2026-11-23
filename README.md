@@ -2,6 +2,8 @@
 
 **The universal CLI gateway for AI assistants. 5 tools. 50+ CLIs. 1 Docker container.**
 
+[![CI](https://github.com/kamikaze1120/CLI-MCP/actions/workflows/ci.yml/badge.svg)](https://github.com/kamikaze1120/CLI-MCP/actions/workflows/ci.yml)
+[![Image](https://img.shields.io/badge/ghcr.io-cli--mcp--tools-2496ED?logo=docker)](https://github.com/kamikaze1120/CLI-MCP/pkgs/container/cli-mcp-tools)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](pyproject.toml)
 [![Docker](https://img.shields.io/badge/docker-required-2496ED?logo=docker)](https://docker.com)
@@ -9,6 +11,11 @@
 CLI MCP Gateway is a [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that gives AI assistants like Claude Desktop, Claude Code, and Cursor the ability to execute **any CLI command** inside an isolated Docker container.
 
 **Stop context-copying. Stop switching terminals. Just ask.**
+
+```bash
+# Claude Code — one command, no clone, no build (needs Docker + uv)
+claude mcp add cli-mcp -- uvx --from git+https://github.com/kamikaze1120/CLI-MCP cli-mcp
+```
 
 ```text
 You:    "What's the git history look like?"
@@ -31,7 +38,7 @@ Claude: *runs `docker exec app df -h`* → "You have 12GB free."
 
 - Stop copying terminal output into chat. Ask "show me the last 5 commits" and Claude runs `git log` itself.
 - Git, npm, docker, python, aws, gcloud, gh — 50+ tools pre-installed in a single image.
-- Setup in 2 minutes: `pip install && cli-mcp --build-image && cli-mcp`
+- Setup in one command — the tools image is pre-built and pulled automatically on first run.
 
 ### For Teams
 
@@ -40,13 +47,13 @@ Claude: *runs `docker exec app df -h`* → "You have 12GB free."
 - Replace a zoo of per-tool MCP servers with a single universal gateway.
 - Standardized security policy across the whole team (YAML config, checked into repo).
 - Same tool environment for everyone — no more "works on my machine."
-- Docker sandbox means zero host contamination. Commands cannot touch your system.
+- Docker sandbox: commands see only the project directory you mount, not the rest of your machine.
 
 ### For Security-Conscious Leaders
 
 **AI superpowers without the blast radius.**
 
-- Every command runs inside an **isolated Docker container** — no host filesystem access by default.
+- Every command runs inside an **isolated Docker container** — only your project directory is mounted, and the Docker socket is **off by default**.
 - **Blocklist mode** — prevent `rm -rf /`, fork bombs, raw disk writes, and more.
 - **Allowlist mode** — restrict the AI to approved tools only (e.g., just `git` and `npm`).
 - **Timeout enforcement** — runaway commands auto-kill after N seconds.
@@ -65,9 +72,9 @@ Claude: *runs `docker exec app df -h`* → "You have 12GB free."
 | **Persistent container** | Near-instant execution (<200ms). State (auth tokens, caches, installed packages) persists across commands. |
 | **Security built in** | Blocklist/allowlist, timeout enforcement, output truncation, read-only workspace option. |
 | **Cross-platform** | Windows (Docker Desktop + WSL2), macOS, Linux — identical experience everywhere. |
-| **Dual transport** | `stdio` for local development ($0), HTTP for remote/team deployment ($5-10/mo VPS). |
+| **Dual transport** | `stdio` for local use, streamable HTTP (with bearer-token auth) for remote/team deployment. |
 | **Configurable** | YAML config file with environment variable overrides. Check into repo for team consistency. |
-| **Pre-built image** | [Dockerfile](Dockerfile) included. Build once with `cli-mcp --build-image`, or point `sandbox.image` at any image of your own. All tools in one layer-cached image (~1.5GB). |
+| **Pre-built image** | Published to `ghcr.io/kamikaze1120/cli-mcp-tools` and pulled automatically on first run (~1.5GB, once). Prefer to build it yourself? `cli-mcp --build-image` from a clone. Or point `sandbox.image` at any image of your own. |
 
 ---
 
@@ -91,34 +98,43 @@ Claude: *runs `docker exec app df -h`* → "You have 12GB free."
 ┌──────────────────────▼──────────────────────────────────┐
 │  Persistent Docker Container (cli-mcp-sandbox)           │
 │  ┌────────────────────────────────────────────────────┐  │
-│  │  cli-mcp-tools:latest                              │  │
+│  │  ghcr.io/kamikaze1120/cli-mcp-tools                │  │
 │  │  • git, node/npm, python3, go, rust, java          │  │
 │  │  • aws-cli, gcloud, gh, docker-cli                 │  │
 │  │  • curl, jq, ripgrep, fd, yq, tmux, vim...         │  │
 │  │  • workspace: /workspace ↔ host CWD                │  │
-│  │  • Docker socket mounted for docker-in-docker      │  │
+│  │  • Docker socket: not mounted (opt-in only)        │  │
 │  └────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Quick Start (2 minutes)
+## Quick Start
+
+**Prerequisites**: Docker (Desktop or Engine) running, and [uv](https://docs.astral.sh/uv/) *or* Python 3.10+ with pip.
 
 ```bash
-# 1. Install
-git clone https://github.com/kamikaze1120/CLI-MCP.git
-cd CLI-MCP
-pip install .
+# Option A — run straight from GitHub with uv (nothing to install permanently)
+uvx --from git+https://github.com/kamikaze1120/CLI-MCP cli-mcp
 
-# 2. Build the tools image (5-15 min first time)
-cli-mcp --build-image
-
-# 3. Start the server
+# Option B — install with pip
+pip install git+https://github.com/kamikaze1120/CLI-MCP
 cli-mcp
 ```
 
-**Prerequisites**: Python 3.10+, Docker (Desktop or CLI), pip.
+On first run the gateway pulls the pre-built tools image (~1.5GB, one time) and starts a
+sandbox container. Your MCP client normally launches the server for you — see below.
+
+<details>
+<summary>Build the tools image yourself instead</summary>
+
+```bash
+git clone https://github.com/kamikaze1120/CLI-MCP.git && cd CLI-MCP
+pip install -e .
+cli-mcp --build-image   # 5-15 min; tags the same image name the gateway uses
+```
+</details>
 
 ### Connect your AI assistant
 
@@ -131,8 +147,8 @@ Add to your `claude_desktop_config.json`:
 {
   "mcpServers": {
     "cli-mcp": {
-      "command": "cli-mcp",
-      "args": []
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/kamikaze1120/CLI-MCP", "cli-mcp"]
     }
   }
 }
@@ -143,7 +159,7 @@ Add to your `claude_desktop_config.json`:
 <summary><b>Claude Code</b></summary>
 
 ```bash
-claude mcp add cli-mcp -- cli-mcp
+claude mcp add cli-mcp -- uvx --from git+https://github.com/kamikaze1120/CLI-MCP cli-mcp
 ```
 </details>
 
@@ -156,7 +172,9 @@ Add to Cursor settings → MCP Servers:
 |---|---|
 | Name | `cli-mcp` |
 | Type | `command` |
-| Command | `cli-mcp` |
+| Command | `uvx --from git+https://github.com/kamikaze1120/CLI-MCP cli-mcp` |
+
+If you installed with pip, the command is simply `cli-mcp` in all three clients.
 </details>
 
 ---
@@ -175,7 +193,7 @@ CLI MCP Gateway is configured via a YAML file. It looks for these files in order
 ```yaml
 # cli-mcp.yaml
 sandbox:
-  image: cli-mcp-tools:latest
+  image: ghcr.io/kamikaze1120/cli-mcp-tools:latest
   workspace:
     host_path: /home/user/projects
 ```
@@ -251,7 +269,7 @@ CLI MCP Gateway runs every command inside an isolated Docker container, providin
 
 ### Security layers
 
-1. **Docker containerization** — commands run in an ephemeral container with no host access (except mounted volumes)
+1. **Docker containerization** — commands run in a container that sees only explicitly mounted paths (by default: your workspace)
 2. **Command blocklist** — regex patterns that block dangerous commands (configurable)
 3. **Timeout enforcement** — commands are killed after the configured timeout
 4. **Output limits** — prevents runaway output from flooding the AI context
@@ -288,14 +306,20 @@ security:
     - python3
 ```
 
-### Docker socket security
+### Docker socket (off by default)
 
-By default, the Docker socket is mounted read-only, allowing `docker` commands inside the sandbox. This enables docker-in-docker workflows. Remove the mount if you don't need it:
+The Docker socket is **not** mounted by default. Mounting it lets sandboxed commands drive
+your host's Docker daemon, which is effectively root on the host — a `:ro` mount does not
+change that. Only opt in on a dedicated machine where you accept the risk:
 
 ```yaml
 sandbox:
-  volume_mounts: []  # removes Docker socket mount
+  volume_mounts:
+    - host_path: /var/run/docker.sock
+      container_path: /var/run/docker.sock
 ```
+
+See [SECURITY.md](SECURITY.md) for the full deployment checklist.
 
 For additional security in production:
 - Set `sandbox.workspace.read_only: true`
@@ -336,7 +360,7 @@ docker run -d \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
   -p 8080:8080 \
   -e CLI_MCP_AUTH_TOKEN=<your-token> \
-  cli-mcp-tools:latest \
+  ghcr.io/kamikaze1120/cli-mcp-tools:latest \
   bash -c "pip install git+https://github.com/kamikaze1120/CLI-MCP.git && cli-mcp --transport http --host 0.0.0.0"
 ```
 
@@ -345,7 +369,7 @@ docker run -d \
 - 🔐 **Always set an auth token** for HTTP mode
 - 🔒 Use HTTPS behind a reverse proxy (nginx, Caddy, or Cloudflare Tunnel)
 - 📊 Add rate limiting at the reverse proxy level
-- 🔄 Use `--security mode: allowlist` for team deployments
+- 🔄 Set `security.mode: allowlist` in `cli-mcp.yaml` for team deployments
 - 📝 Set up logging to a file with `--verbose`
 
 ---
@@ -381,7 +405,7 @@ Yes. Set `sandbox.image` in the config or `CLI_MCP_IMAGE` environment variable t
 
 ### Is this free?
 
-Yes, it's MIT-licensed open source. The only costs are Docker Desktop (free for personal use) and optionally a VPS (~$5-10/month) if you want remote HTTP access.
+Yes, it's MIT-licensed open source. Docker Desktop is free for personal use; a small VPS is only needed if you want remote HTTP access.
 
 ### Does it work on Windows?
 
@@ -389,7 +413,7 @@ Yes. Docker Desktop on Windows with WSL2 backend is fully supported. The path tr
 
 ### How do I update the tools?
 
-Rebuild the image from the repo checkout: `cli-mcp --build-image`, then reset the sandbox with the `reset_sandbox()` tool so a fresh container is created from the new image.
+Run `docker pull ghcr.io/kamikaze1120/cli-mcp-tools:latest` (or `cli-mcp --build-image` from a clone), then call the `reset_sandbox()` tool so a fresh container is created from the new image.
 
 ---
 
@@ -405,7 +429,7 @@ CLI-MCP/
 │   ├── config.py        # YAML config loader with env overrides
 │   └── path_utils.py    # Cross-platform path translation
 ├── tests/               # pytest test suite
-├── Dockerfile           # Pre-built tools image (Ubuntu 24.04)
+├── Dockerfile           # Tools image (Ubuntu 24.04), published to GHCR by CI
 ├── cli-mcp.example.yaml # Documented configuration reference
 └── pyproject.toml       # Python package metadata
 ```

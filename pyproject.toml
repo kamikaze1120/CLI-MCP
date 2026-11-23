@@ -1,12 +1,12 @@
 [project]
 name = "cli-mcp"
-version = "1.0.0"
+version = "1.1.0"
 description = "Universal sandboxed CLI gateway for MCP — run any CLI tool through AI assistants"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
 authors = [
-    { name = "cli-mcp", email = "hello@cli-mcp.dev" },
+    { name = "kamikaze1120" },
 ]
 keywords = ["mcp", "cli", "docker", "sandbox", "ai", "claude", "model-context-protocol"]
 classifiers = [
@@ -23,7 +23,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "mcp[cli]>=1.6.0",
+    "mcp[cli]>=1.6.0,<2",
     "pyyaml>=6.0",
     "pydantic>=2.0",
     "uvicorn>=0.23",

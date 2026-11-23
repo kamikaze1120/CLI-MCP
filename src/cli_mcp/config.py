@@ -7,21 +7,22 @@ from typing import Any
 
 import yaml
 
+# Pre-built tools image, published by .github/workflows/image.yml.
+# Pulled automatically on first run; `cli-mcp --build-image` builds it locally instead.
+DEFAULT_IMAGE = "ghcr.io/kamikaze1120/cli-mcp-tools:latest"
+
 DEFAULT_CONFIG: dict[str, Any] = {
     "sandbox": {
         "type": "docker",
-        "image": "cli-mcp-tools:latest",
+        "image": DEFAULT_IMAGE,
         "container_name": "cli-mcp-sandbox",
         "persistent": True,
         "auto_start": True,
         "auto_stop": False,
-        "volume_mounts": [
-            {
-                "host_path": "/var/run/docker.sock",
-                "container_path": "/var/run/docker.sock",
-                "read_only": True,
-            }
-        ],
+        # No extra mounts by default. Mounting /var/run/docker.sock grants
+        # host-level Docker access (":ro" does not restrict the API), so it is
+        # an explicit opt-in — see cli-mcp.example.yaml.
+        "volume_mounts": [],
         "workspace": {
             "mount": True,
             "host_path": "",
@@ -69,7 +70,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "max_output_bytes": 1_048_576,
     },
     "tools": {
-        "default_image": "cli-mcp-tools:latest",
+        "default_image": DEFAULT_IMAGE,
         "command_timeout": 60,
         "env": {
             "PYTHONUNBUFFERED": "1",

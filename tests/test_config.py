@@ -3,14 +3,15 @@ import tempfile
 
 import yaml
 
-from cli_mcp.config import DEFAULT_CONFIG, _deep_merge, load_config
+from cli_mcp.config import DEFAULT_CONFIG, DEFAULT_IMAGE, _deep_merge, load_config
 
 
 class TestConfigLoading:
     def test_default_config(self):
         config = load_config()
         assert config["sandbox"]["type"] == "docker"
-        assert config["sandbox"]["image"] == "cli-mcp-tools:latest"
+        assert config["sandbox"]["image"] == DEFAULT_IMAGE
+        assert config["sandbox"]["volume_mounts"] == []  # no Docker socket by default
         assert config["security"]["mode"] == "blocklist"
         assert config["server"]["transports"] == ["stdio"]
 

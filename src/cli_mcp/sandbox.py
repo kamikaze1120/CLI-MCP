@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .config import DEFAULT_IMAGE
 from .path_utils import docker_mount_args, is_windows
 
 logger = logging.getLogger("cli-mcp.sandbox")
@@ -46,7 +47,7 @@ class DockerSandbox:
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         sandbox_cfg = config.get("sandbox", {})
-        self.image = sandbox_cfg.get("image", "cli-mcp-tools:latest")
+        self.image = sandbox_cfg.get("image", DEFAULT_IMAGE)
         self.container_name = sandbox_cfg.get("container_name", "cli-mcp-sandbox")
         self.persistent = sandbox_cfg.get("persistent", True)
         self.auto_start = sandbox_cfg.get("auto_start", True)

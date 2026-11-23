@@ -42,18 +42,20 @@ def build_image() -> None:
         print("pre-built image and set 'sandbox.image' in cli-mcp.yaml instead.")
         sys.exit(1)
 
-    print("Building cli-mcp-tools:latest Docker image...")
+    from cli_mcp.config import DEFAULT_IMAGE
+
+    print(f"Building {DEFAULT_IMAGE} Docker image...")
     print(f"  Context: {dockerfile.parent}")
     print("  This may take 5-15 minutes depending on your network.\n")
 
     result = subprocess.run(
-        ["docker", "build", "-t", "cli-mcp-tools:latest", "-f", str(dockerfile), "."],
+        ["docker", "build", "-t", DEFAULT_IMAGE, "-f", str(dockerfile), "."],
         cwd=dockerfile.parent,
     )
 
     if result.returncode == 0:
-        print("\n✓ Image built successfully: cli-mcp-tools:latest")
-        print("  Run 'docker images cli-mcp-tools' to verify.")
+        print(f"\n✓ Image built successfully: {DEFAULT_IMAGE}")
+        print(f"  Run 'docker image inspect {DEFAULT_IMAGE}' to verify.")
     else:
         print(f"\n✗ Build failed with exit code {result.returncode}")
         sys.exit(1)

@@ -1,15 +1,19 @@
 # ── Sandbox Configuration ──────────────────────────────────────────────────────
 sandbox:
   type: docker
-  image: cli-mcp-tools:latest
+  image: ghcr.io/kamikaze1120/cli-mcp-tools:latest   # pulled on first run
   container_name: cli-mcp-sandbox
   persistent: true
   auto_start: true
   auto_stop: false
-  volume_mounts:
-    - host_path: /var/run/docker.sock
-      container_path: /var/run/docker.sock
-      read_only: true
+  # Extra host mounts. Empty by default.
+  # Opt-in only: mounting the Docker socket lets sandboxed commands control the
+  # host's Docker daemon (equivalent to root on the host) — ":ro" does NOT limit
+  # this. Enable it only on a dedicated machine where you accept that risk.
+  volume_mounts: []
+  # volume_mounts:
+  #   - host_path: /var/run/docker.sock
+  #     container_path: /var/run/docker.sock
   workspace:
     mount: true
     host_path: ""          # empty = current working directory of the server
@@ -48,7 +52,7 @@ security:
 
 # ── Tool Settings ─────────────────────────────────────────────────────────────
 tools:
-  default_image: cli-mcp-tools:latest
+  default_image: ghcr.io/kamikaze1120/cli-mcp-tools:latest
   command_timeout: 60
   env:
     PYTHONUNBUFFERED: "1"
