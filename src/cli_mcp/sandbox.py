@@ -267,7 +267,7 @@ class DockerSandbox:
         result = await self.exec(
             "which",
             "-- ls git node npm python3 aws gcloud gh docker jq yq rg fdfind curl wget "
-            "make gcc go rustc java ssh tar zip unzip vim tmux",
+            "make gcc go rustc java kubectl ssh tar zip unzip vim tmux",
             timeout=10,
         )
 

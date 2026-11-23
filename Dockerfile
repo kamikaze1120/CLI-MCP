@@ -104,13 +104,14 @@ RUN curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -
     && /tmp/aws/aws/install \
     && rm -rf /tmp/aws /tmp/awscliv2.zip
 
-# ── Layer 7: Google Cloud SDK ────────────────────────────────────────────────
+# ── Layer 7: Google Cloud CLI + kubectl ──────────────────────────────────────
+# (the apt package was renamed google-cloud-sdk -> google-cloud-cli)
 RUN echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" \
         | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list \
     && curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg \
         | gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg \
     && apt-get update \
-    && apt-get install -y google-cloud-sdk \
+    && apt-get install -y --no-install-recommends google-cloud-cli kubectl \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Layer 8: Docker CLI ──────────────────────────────────────────────────────
