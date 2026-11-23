@@ -8,6 +8,7 @@ Run locally:  python demo/demo.py            (needs Docker + `pip install -e .`)
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 import time
 
@@ -46,7 +47,10 @@ def show_result(text: str) -> None:
 
 async def main(warmup: bool) -> None:
     params = StdioServerParameters(command="cli-mcp", args=[])
-    async with stdio_client(params) as (read, write):
+    # Server logs go to stderr; an MCP client never shows them to the user, so
+    # keep them out of the recording too.
+    errlog = open(os.devnull, "w")  # noqa: SIM115 - lives for the whole session
+    async with stdio_client(params, errlog=errlog) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             if warmup:
@@ -60,8 +64,12 @@ async def main(warmup: bool) -> None:
             for name, args in CALLS:
                 show_call(name, args)
                 time.sleep(0.6)
-                result = await session.call_tool(name, args)
-                show_result("".join(c.text for c in result.content if hasattr(c, "text")))
+                try:
+                    result = await asyncio.wait_for(session.call_tool(name, args), timeout=60)
+                    text = "".join(c.text for c in result.content if hasattr(c, "text"))
+                except asyncio.TimeoutError:
+                    text = "Error: demo call timed out after 60s"
+                show_result(text)
                 time.sleep(1.6)
             repo = "github.com/kamikaze1120/CLI-MCP"
             print(f"{GREEN}✓{RESET} real calls, real output {DIM}· {repo}{RESET}", flush=True)

@@ -19,5 +19,5 @@ Sleep 500ms
 Type "python demo/demo.py"
 Sleep 400ms
 Enter
-Wait+Screen@120s /real calls, real output/
+Wait+Screen@180s /real calls/
 Sleep 4s
