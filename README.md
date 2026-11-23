@@ -12,6 +12,11 @@ CLI MCP Gateway is a [Model Context Protocol (MCP)](https://modelcontextprotocol
 
 **Stop context-copying. Stop switching terminals. Just ask.**
 
+<p align="center">
+  <img src="docs/demo.gif" width="860" alt="An MCP client calling CLI-MCP: git log, tool versions, a Python script, and rm -rf / being blocked">
+  <br><sub>Real MCP tool calls against the real server and sandbox — recorded automatically in CI.</sub>
+</p>
+
 ```bash
 # Claude Code — one command, no clone, no build (needs Docker + uv)
 claude mcp add cli-mcp -- uvx --from git+https://github.com/kamikaze1120/CLI-MCP cli-mcp
