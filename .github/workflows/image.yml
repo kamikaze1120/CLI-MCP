@@ -57,3 +57,25 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  smoke-test:
+    # Verify every tool the README advertises actually exists in the published image
+    needs: publish
+    if: github.event_name != 'pull_request'
+    strategy:
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Check advertised tools
+        run: |
+          IMAGE=ghcr.io/${{ github.repository_owner }}/cli-mcp-tools:sha-${GITHUB_SHA::7}
+          docker run --rm "$IMAGE" bash -c '
+            missing=0
+            for t in git node npm python3 pip3 uv go rustc cargo java make gcc \
+                     aws gcloud kubectl gh docker curl wget jq yq rg fdfind \
+                     vim tmux ssh tar zip unzip; do
+              if command -v "$t" >/dev/null; then echo "ok      $t"; else echo "MISSING $t"; missing=1; fi
+            done
+            echo "executables on PATH: $(compgen -c | sort -u | wc -l)"
+            exit $missing'
