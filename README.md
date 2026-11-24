@@ -1,12 +1,20 @@
-# CLI MCP Gateway
+<p align="center">
+  <img src="./.github/readme/hero.svg" width="100%" alt="CLI-MCP: a sandboxed terminal for any MCP client">
+</p>
 
-**The universal CLI gateway for AI assistants. 5 tools. 50+ CLIs. 1 Docker container.**
+<p align="center">
+  <img src="https://readme-typing-svg.demolab.com?font=JetBrains+Mono&amp;weight=600&amp;size=18&amp;duration=2600&amp;pause=700&amp;color=F4C65A&amp;center=true&amp;vCenter=true&amp;width=850&amp;height=42&amp;lines=Runs+50%2B+CLI+tools+in+a+Docker+sandbox.;Works+with+Claude+Code%2C+Claude+Desktop+and+Cursor.;Allowlist+and+blocklist+security+policies." alt="Typing summary of CLI-MCP">
+</p>
 
-[![CI](https://github.com/kamikaze1120/CLI-MCP/actions/workflows/ci.yml/badge.svg)](https://github.com/kamikaze1120/CLI-MCP/actions/workflows/ci.yml)
-[![Image](https://img.shields.io/badge/ghcr.io-cli--mcp--tools-2496ED?logo=docker)](https://github.com/kamikaze1120/CLI-MCP/pkgs/container/cli-mcp-tools)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](pyproject.toml)
-[![Docker](https://img.shields.io/badge/docker-required-2496ED?logo=docker)](https://docker.com)
+<p align="center">
+  <a href="https://github.com/kamikaze1120/CLI-MCP/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/kamikaze1120/CLI-MCP/ci.yml?branch=main&amp;style=for-the-badge&amp;labelColor=15103A&amp;label=CI" alt="CI"></a>
+  <a href="https://github.com/kamikaze1120/CLI-MCP/pkgs/container/cli-mcp-tools"><img src="https://img.shields.io/badge/ghcr.io-cli--mcp--tools-2496ED?style=for-the-badge&amp;labelColor=15103A&amp;logo=docker&amp;logoColor=white" alt="Image"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-F4C65A?style=for-the-badge&amp;labelColor=15103A" alt="License: MIT"></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/python-3.10+-BD3CFF?style=for-the-badge&amp;labelColor=15103A&amp;logo=python&amp;logoColor=white" alt="Python 3.10+"></a>
+  <a href="https://docker.com"><img src="https://img.shields.io/badge/docker-required-2496ED?style=for-the-badge&amp;labelColor=15103A&amp;logo=docker&amp;logoColor=white" alt="Docker"></a>
+</p>
+
+<p align="center"><b>The universal CLI gateway for AI assistants. 5 tools. 50+ CLIs. 1 Docker container.</b></p>
 
 CLI MCP Gateway is a [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that gives AI assistants like Claude Desktop, Claude Code, and Cursor the ability to execute **any CLI command** inside an isolated Docker container.
 
