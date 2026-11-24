@@ -222,9 +222,8 @@ for your workload.
 All limits are optional and unset by default. Omit a setting or use
 `null` to leave that limit unset, preserving existing behaviour.
 
-Limits apply when creating a new container. Recreate existing containers
-after changing these settings.
-
+Limits apply when creating a new container. After changing these settings,
+recreate it with the `reset_sandbox` tool.
 
 ### Full configuration reference
 
@@ -475,6 +474,16 @@ Contributions are welcome! Here's how to get started:
 5. Submit a pull request
 
 Please ensure your code passes linting (`ruff check`) and all tests.
+
+Looking for a place to start? Check the [good first issues](https://github.com/kamikaze1120/CLI-MCP/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
+
+### 🙌 Contributors
+
+Thank you to everyone who has improved CLI MCP Gateway:
+
+| Contributor | Contribution |
+|---|---|
+| [@nidagithub123](https://github.com/nidagithub123) | Optional sandbox CPU, memory and PID limits ([#15](https://github.com/kamikaze1120/CLI-MCP/pull/15)) |
 
 ---
 
