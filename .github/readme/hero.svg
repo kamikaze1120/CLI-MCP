@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="title desc">
+  <title id="title">CLI-MCP - Gilded Nebula</title>
+  <desc id="desc">Animated night-sky banner with a terminal running inside a dashed Docker sandbox; a destructive command is shown being blocked.</desc>
+  <defs>
+    <linearGradient id="night" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#020317"/>
+      <stop offset=".52" stop-color="#071238"/>
+      <stop offset="1" stop-color="#13052d"/>
+    </linearGradient>
+    <radialGradient id="purpleCloud">
+      <stop stop-color="#d43cff" stop-opacity=".7"/>
+      <stop offset=".34" stop-color="#8d22ff" stop-opacity=".32"/>
+      <stop offset="1" stop-color="#4215a7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="goldCloud">
+      <stop stop-color="#ffe69b" stop-opacity=".5"/>
+      <stop offset=".3" stop-color="#f0ad38" stop-opacity=".2"/>
+      <stop offset="1" stop-color="#b76f08" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="core">
+      <stop stop-color="#fff7cf"/>
+      <stop offset=".2" stop-color="#ffe08a"/>
+      <stop offset=".6" stop-color="#f0a72f"/>
+      <stop offset="1" stop-color="#8d3d16"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#a96b18"/>
+      <stop offset=".28" stop-color="#ffe293"/>
+      <stop offset=".55" stop-color="#f4bb4d"/>
+      <stop offset=".82" stop-color="#fff0b7"/>
+      <stop offset="1" stop-color="#b87519"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#ffffff" stop-opacity=".14"/>
+      <stop offset=".45" stop-color="#af75ff" stop-opacity=".08"/>
+      <stop offset="1" stop-color="#f6c35b" stop-opacity=".06"/>
+    </linearGradient>
+    <pattern id="stars" width="150" height="110" patternUnits="userSpaceOnUse">
+      <circle cx="13" cy="18" r="1.2" fill="#fff7d4" opacity=".9"/>
+      <circle cx="61" cy="36" r=".7" fill="#d7b5ff" opacity=".76"/>
+      <circle cx="112" cy="17" r=".9" fill="#fff" opacity=".72"/>
+      <circle cx="140" cy="68" r="1.1" fill="#ffd972" opacity=".8"/>
+      <circle cx="83" cy="91" r=".55" fill="#fff" opacity=".58"/>
+      <circle cx="31" cy="100" r=".75" fill="#c68cff" opacity=".78"/>
+    </pattern>
+    <filter id="blur" x="-70%" y="-70%" width="240%" height="240%"><feGaussianBlur stdDeviation="42"/></filter>
+    <filter id="glow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dy="18" stdDeviation="20" flood-color="#000017" flood-opacity=".8"/></filter>
+    <clipPath id="clip"><rect width="1200" height="420" rx="34"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#clip)">
+    <rect width="1200" height="420" fill="url(#night)"/>
+    <ellipse cx="300" cy="140" rx="340" ry="210" fill="url(#purpleCloud)" filter="url(#blur)">
+      <animate attributeName="rx" values="310;380;310" dur="14s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values=".65;1;.65" dur="9s" repeatCount="indefinite"/>
+    </ellipse>
+    <ellipse cx="1000" cy="270" rx="320" ry="190" fill="url(#goldCloud)" filter="url(#blur)">
+      <animate attributeName="ry" values="170;230;170" dur="16s" repeatCount="indefinite"/>
+    </ellipse>
+    <rect x="-150" width="1500" height="520" fill="url(#stars)" opacity=".78">
+      <animateTransform attributeName="transform" type="translate" values="0 0;150 0" dur="46s" repeatCount="indefinite"/>
+    </rect>
+    <g transform="translate(960 210)">
+      <circle r="150" fill="none" stroke="#f7c758" stroke-width="1.4" stroke-dasharray="4 12" opacity=".6">
+        <animateTransform attributeName="transform" type="rotate" values="0;360" dur="30s" repeatCount="indefinite"/>
+      </circle>
+      <circle r="186" fill="none" stroke="#bc52ff" stroke-width="1" stroke-dasharray="2 14" opacity=".5">
+        <animateTransform attributeName="transform" type="rotate" values="360;0" dur="40s" repeatCount="indefinite"/>
+      </circle>
+    </g>
+    <rect x="770" y="70" width="380" height="282" rx="20" fill="none" stroke="#4fd6ff" stroke-opacity=".55" stroke-width="1.6" stroke-dasharray="10 8">
+      <animate attributeName="stroke-dashoffset" values="0;-36" dur="3s" repeatCount="indefinite"/>
+    </rect>
+    <text x="790" y="62" fill="#8fe6ff" font-family="'JetBrains Mono', Consolas, 'Courier New', monospace" font-size="11" letter-spacing="2">DOCKER SANDBOX</text>
+    <g filter="url(#shadow)">
+      <rect x="792" y="92" width="336" height="238" rx="14" fill="#050822" fill-opacity=".95" stroke="url(#gold)" stroke-opacity=".8"/>
+    </g>
+    <path d="M792 122H1128" stroke="#c45cff" stroke-opacity=".35"/>
+    <circle cx="812" cy="107" r="5" fill="#ff6fae" opacity=".8"/>
+    <circle cx="830" cy="107" r="5" fill="#f4c65a" opacity=".8"/>
+    <circle cx="848" cy="107" r="5" fill="#a46bff" opacity=".8"/>
+    <text x="1110" y="111" fill="#bfa9e6" font-family="'JetBrains Mono', Consolas, 'Courier New', monospace" font-size="10" text-anchor="end">run_cli</text>
+    <g font-family="'JetBrains Mono', Consolas, 'Courier New', monospace" font-size="13">
+      <text x="810" y="150" fill="#f4c65a">$ <tspan fill="#fff0c8">git log --oneline -3</tspan></text>
+      <text x="810" y="170" fill="#9d8cc4">fbca9ce docs: credit contributors</text>
+      <text x="810" y="196" fill="#f4c65a">$ <tspan fill="#fff0c8">python3 --version</tspan></text>
+      <text x="810" y="216" fill="#9d8cc4">Python 3.x</text>
+      <text x="810" y="242" fill="#f4c65a">$ <tspan fill="#fff0c8">rm -rf /</tspan></text>
+      <text x="810" y="262" fill="#ff7ad9">x blocked by security policy
+        <animate attributeName="opacity" values=".4;1;.4" dur="2.4s" repeatCount="indefinite"/>
+      </text>
+      <text x="810" y="290" fill="#f4c65a">$</text>
+    </g>
+    <rect x="826" y="279" width="9" height="15" fill="#f4c65a">
+      <animate attributeName="opacity" values="1;1;0;0" keyTimes="0;.5;.5;1" dur="1.1s" repeatCount="indefinite"/>
+    </rect>
+    <circle cx="770" cy="352" r="7" fill="#4fd6ff" filter="url(#glow)">
+      <animate attributeName="opacity" values=".35;1;.35" dur="2s" repeatCount="indefinite"/>
+    </circle>
+    <g filter="url(#shadow)">
+      <rect x="56" y="48" width="652" height="324" rx="28" fill="#060a25" fill-opacity=".6" stroke="url(#gold)" stroke-opacity=".82"/>
+      <rect x="68" y="60" width="628" height="300" rx="22" fill="url(#glass)" stroke="#d38cff" stroke-opacity=".28"/>
+    </g>
+    <path d="M96 96H310" stroke="url(#gold)" stroke-width="2"/>
+    <circle cx="96" cy="96" r="5" fill="#ffd66f" filter="url(#glow)">
+      <animate attributeName="opacity" values=".3;1;.3" dur="1.6s" repeatCount="indefinite"/>
+    </circle>
+    <text x="114" y="101" fill="#f9d777" font-family="'JetBrains Mono', Consolas, 'Courier New', monospace" font-size="13" letter-spacing="3">MCP SERVER / CLI GATEWAY</text>
+    <text x="94" y="178" fill="#fff9e8" font-family="'Segoe UI', 'Inter', 'Helvetica Neue', Arial, sans-serif" font-size="80" font-weight="800" letter-spacing="2">CLI-MCP</text>
+    <text x="98" y="218" fill="url(#gold)" font-family="'JetBrains Mono', Consolas, 'Courier New', monospace" font-size="19" font-weight="700" letter-spacing="4">50+ CLIS / ONE SANDBOX</text>
+    <text x="98" y="258" fill="#d9c7f2" font-family="'Segoe UI', 'Inter', 'Helvetica Neue', Arial, sans-serif" font-size="17">A sandboxed terminal for any MCP client</text>
+    <g transform="translate(98 290)">
+      <rect width="177" height="42" rx="21" fill="#140f36" fill-opacity=".8" stroke="#d34cff" stroke-opacity=".7"/>
+      <circle cx="21" cy="21" r="5" fill="#d952ff" filter="url(#glow)"><animate attributeName="opacity" values=".3;1;.3" dur="1.4s" repeatCount="indefinite"/></circle>
+      <text x="36" y="26" fill="#f0d7ff" font-family="'JetBrains Mono', Consolas, 'Courier New', monospace" font-size="12" letter-spacing="1.3">DOCKER ISOLATED</text>
+    </g>
+    <g transform="translate(289.0 290)">
+      <rect width="107" height="42" rx="21" fill="#140f36" fill-opacity=".8" stroke="#f3c454" stroke-opacity=".7"/>
+      <text x="18" y="26" fill="#ffe7a2" font-family="'JetBrains Mono', Consolas, 'Courier New', monospace" font-size="12" letter-spacing="1.3">ALLOWLIST</text>
+    </g>
+    <g transform="translate(410.4 290)">
+      <rect width="107" height="42" rx="21" fill="#140f36" fill-opacity=".8" stroke="#9f62ff" stroke-opacity=".7"/>
+      <text x="18" y="26" fill="#dcc9ff" font-family="'JetBrains Mono', Consolas, 'Courier New', monospace" font-size="12" letter-spacing="1.3">BLOCKLIST</text>
+    </g>
+    <rect x="0" y="0" width="1200" height="420" rx="34" fill="none" stroke="url(#gold)" stroke-width="2"/>
+    <rect x="10" y="10" width="1180" height="400" rx="27" fill="none" stroke="#c44fff" stroke-opacity=".16"/>
+    <rect x="0" y="-45" width="1200" height="34" fill="#f7cf68" opacity=".045"><animate attributeName="y" values="-45;450" dur="8s" repeatCount="indefinite"/></rect>
+  </g>
+</svg>
