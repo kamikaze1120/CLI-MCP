@@ -52,6 +52,7 @@ class DockerSandbox:
         self.persistent = sandbox_cfg.get("persistent", True)
         self.auto_start = sandbox_cfg.get("auto_start", True)
         self.auto_stop = sandbox_cfg.get("auto_stop", False)
+        self.resources = sandbox_cfg.get("resources", {}) or {}
         self.volume_mounts = sandbox_cfg.get("volume_mounts", [])
         self.workspace_cfg = sandbox_cfg.get("workspace", {})
         self._container_id: str | None = None
@@ -151,6 +152,14 @@ class DockerSandbox:
             "-d",
             "--name", self.container_name,
         ]
+        for key, flag in (
+            ("cpus", "--cpus"),
+            ("memory", "--memory"),
+            ("pids_limit", "--pids-limit"),
+        ):
+            value = self.resources.get(key)
+            if value is not None:
+                run_args.extend([flag, str(value)])
 
         run_args.extend(self._build_volume_flags())
 

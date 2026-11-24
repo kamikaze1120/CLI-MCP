@@ -203,6 +203,29 @@ sandbox:
     host_path: /home/user/projects
 ```
 
+### Sandbox resource limits
+
+Set optional resource limits in `cli-mcp.yaml`:
+
+```yaml
+sandbox:
+  resources:
+    cpus: "2"
+    memory: "2g"
+    pids_limit: 512
+```
+
+These example values allow CPU capacity equivalent to 2 cores, 2 GiB of
+memory, and up to 512 processes and threads. Choose values appropriate
+for your workload.
+
+All limits are optional and unset by default. Omit a setting or use
+`null` to leave that limit unset, preserving existing behaviour.
+
+Limits apply when creating a new container. Recreate existing containers
+after changing these settings.
+
+
 ### Full configuration reference
 
 See [cli-mcp.example.yaml](cli-mcp.example.yaml) for the complete configuration with all options documented.
