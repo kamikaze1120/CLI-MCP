@@ -6,6 +6,14 @@ sandbox:
   persistent: true
   auto_start: true
   auto_stop: false
+  # Optional resource limits. Omit or set to null to leave a limit unset.
+  # Example values: cpus: "2", memory: "2g", pids_limit: 512.
+  # Limits apply when creating a new container; recreate existing containers
+  # after changing these settings.
+  resources:
+    cpus: null
+    memory: null
+    pids_limit: null
   # Extra host mounts. Empty by default.
   # Opt-in only: mounting the Docker socket lets sandboxed commands control the
   # host's Docker daemon (equivalent to root on the host) — ":ro" does NOT limit

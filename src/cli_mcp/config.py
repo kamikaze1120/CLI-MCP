@@ -19,6 +19,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "persistent": True,
         "auto_start": True,
         "auto_stop": False,
+        "resources": {
+            "cpus": None,
+            "memory": None,
+            "pids_limit": None,
+        },
         # No extra mounts by default. Mounting /var/run/docker.sock grants
         # host-level Docker access (":ro" does not restrict the API), so it is
         # an explicit opt-in — see cli-mcp.example.yaml.
