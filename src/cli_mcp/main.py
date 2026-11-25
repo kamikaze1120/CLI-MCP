@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from .config import load_config
@@ -61,10 +62,18 @@ def build_image() -> None:
         sys.exit(1)
 
 
+def _get_version() -> str:
+    try:
+        return version("cli-mcp")
+    except PackageNotFoundError:
+        return "unknown"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="CLI MCP Gateway - sandboxed CLI execution for AI assistants",
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {_get_version()}")
     parser.add_argument(
         "--transport",
         choices=["stdio", "http"],
